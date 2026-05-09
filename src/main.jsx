@@ -11,7 +11,7 @@ class ErrorBoundary extends React.Component {
         <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0A1628', color:'#fff', fontFamily:'sans-serif', padding:'24px', textAlign:'center' }}>
           <div>
             <div style={{ fontSize:'2rem', marginBottom:'12px' }}>🩺</div>
-            <h2 style={{ marginBottom:'8px' }}>NursePrep failed to load</h2>
+            <h2 style={{ marginBottom:'8px' }}>Quiztagram failed to load</h2>
             <p style={{ color:'#8898aa', fontSize:'0.9rem', maxWidth:'360px' }}>
               {String(this.state.error?.message || this.state.error)}
             </p>

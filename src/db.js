@@ -186,3 +186,14 @@ export async function markNotificationsRead(userId) {
 export async function createNotification(notif) {
   return call('POST', '/api/notifications', notif)
 }
+
+// ── Verifications ─────────────────────────────────────────────────────────────
+
+export async function getTestVerifications(testId) {
+  const data = await call('GET', `/api/tests/${testId}/verifications`)
+  return data || []
+}
+
+export async function upsertVerification(verification) {
+  return call('POST', '/api/verifications', verification)
+}

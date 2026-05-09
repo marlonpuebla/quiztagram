@@ -358,13 +358,46 @@ input:checked + .toggle-slider:before { transform:translateX(21px); }
   .sidebar-item.active { color:var(--white); font-weight:600; }
   .sidebar-item .notif-badge { margin-left:auto; }
   .sidebar-footer { padding:10px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:2px; }
-  .main-content { margin-left:240px; flex:1; max-width:640px; }
+  .main-content { margin-left:240px; flex:1; }
   .bottom-nav { display:none !important; }
   .screen { padding-bottom:20px; }
+  .top-actions { display:none !important; }
+  .top-bar .logo-sm { display:none; }
 }
 @media (max-width: 767px) {
   .main-content { max-width:480px; margin:0 auto; }
 }
+
+/* ── Academic Demographics ── */
+.demo-section { display:flex; flex-direction:column; gap:8px; }
+.class-list { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.class-chip { display:inline-flex; align-items:center; gap:5px; background:var(--navy3); border:1px solid var(--border); border-radius:20px; padding:4px 10px 4px 12px; font-size:0.8rem; color:var(--white); }
+.class-chip-remove { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:1rem; padding:0; line-height:1; display:flex; align-items:center; }
+.class-chip-remove:hover { color:var(--coral); }
+.class-add-row { display:flex; gap:8px; }
+.privacy-chip-row { display:flex; gap:6px; flex-wrap:wrap; }
+.privacy-chip { padding:6px 14px; border-radius:20px; border:1.5px solid var(--border); background:transparent; color:var(--muted); font-size:0.8rem; font-weight:600; cursor:pointer; transition:var(--trans); white-space:nowrap; }
+.privacy-chip.active { background:var(--ig-blue); border-color:var(--ig-blue); color:#fff; }
+.profile-complete-badge { display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:600; padding:3px 9px; border-radius:10px; background:rgba(6,214,160,0.1); color:var(--success); border:1px solid rgba(6,214,160,0.25); }
+.profile-incomplete-badge { display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:600; padding:3px 9px; border-radius:10px; background:rgba(237,73,86,0.08); color:var(--coral); border:1px solid rgba(237,73,86,0.25); }
+
+/* ── Semester Reminder ── */
+.semester-reminder { margin:0 16px 4px; padding:11px 14px; border-radius:var(--radius-sm); background:rgba(252,175,69,0.08); border:1px solid rgba(252,175,69,0.25); color:var(--gold); display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:0.82rem; }
+
+/* ── Test Metadata Badges ── */
+.meta-badge { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.meta-tag { font-size:0.7rem; padding:3px 9px; border-radius:10px; background:rgba(0,149,246,0.08); color:var(--ig-blue); border:1px solid rgba(0,149,246,0.2); }
+
+/* ── Verification Card ── */
+.verify-stats { display:flex; gap:20px; padding:4px 0; }
+.verify-stat { text-align:center; }
+.verify-stat-val { font-size:1.2rem; font-weight:800; color:var(--ig-blue); }
+.verify-stat-lbl { font-size:0.7rem; color:var(--muted); margin-top:2px; }
+.verify-note { font-size:0.78rem; color:var(--muted); font-style:italic; line-height:1.4; }
+.verify-pass-row { display:flex; gap:8px; }
+.verify-btn { flex:1; padding:12px; border-radius:var(--radius-sm); border:1.5px solid var(--border); background:var(--card); color:var(--muted); font-family:var(--font-body); font-size:0.85rem; font-weight:600; cursor:pointer; transition:var(--trans); text-align:center; }
+.verify-btn.pass.active  { border-color:var(--success); background:rgba(6,214,160,0.1);  color:var(--success); }
+.verify-btn.fail.active  { border-color:var(--coral);   background:rgba(237,73,86,0.1);  color:var(--coral);   }
 
 /* ── Misc ── */
 .divider { height:1px; background:var(--border); margin:4px 0; }

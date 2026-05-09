@@ -75,8 +75,9 @@ app.put('/api/users/:id', async (req, res) => {
     const updates = req.body
     const entries = Object.entries(updates)
     if (!entries.length) return res.json(null)
+    const textArrayCols = ['achievements', 'classes']
     const setClauses = entries.map(([k], i) =>
-      k === 'achievements' ? `${k} = $${i + 1}::text[]` : `${k} = $${i + 1}`
+      textArrayCols.includes(k) ? `${k} = $${i + 1}::text[]` : `${k} = $${i + 1}`
     ).join(', ')
     const values = [...entries.map(([, v]) => v), req.params.id]
     const { rows } = await pool.query(
@@ -111,6 +112,7 @@ app.post('/api/invites', async (req, res) => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 app.get('/api/tests', async (req, res) => {
+  const metaComplete = `(college IS NOT NULL AND program IS NOT NULL AND semester IS NOT NULL)`
   if (req.query.userId) {
     const { rows } = await pool.query(
       'SELECT * FROM tests WHERE created_by_id = $1 ORDER BY created_at DESC',
@@ -121,13 +123,18 @@ app.get('/api/tests', async (req, res) => {
   if (req.query.search) {
     const term = `%${req.query.search}%`
     const { rows } = await pool.query(
-      'SELECT * FROM tests WHERE hidden = false AND (LOWER(name) LIKE LOWER($1) OR LOWER(created_by) LIKE LOWER($1)) ORDER BY created_at DESC',
+      `SELECT * FROM tests WHERE hidden = false AND (
+        LOWER(name) LIKE LOWER($1) OR LOWER(created_by) LIKE LOWER($1) OR
+        LOWER(COALESCE(college,'')) LIKE LOWER($1) OR
+        LOWER(COALESCE(program,'')) LIKE LOWER($1) OR
+        LOWER(COALESCE(semester,'')) LIKE LOWER($1)
+      ) ORDER BY ${metaComplete} DESC, created_at DESC`,
       [term]
     )
     return res.json(rows)
   }
   const { rows } = await pool.query(
-    'SELECT * FROM tests WHERE hidden = false ORDER BY created_at DESC'
+    `SELECT * FROM tests WHERE hidden = false ORDER BY ${metaComplete} DESC, created_at DESC`
   )
   res.json(rows)
 })
@@ -148,11 +155,12 @@ app.get('/api/tests/:id', async (req, res) => {
 
 app.post('/api/tests', async (req, res) => {
   try {
-    const { name, questions, created_by, created_by_id, thumbs_up, thumbs_down, hidden } = req.body
+    const { name, questions, created_by, created_by_id, thumbs_up, thumbs_down, hidden, college, program, semester, professor } = req.body
     const { rows } = await pool.query(
-      `INSERT INTO tests (name, questions, created_by, created_by_id, thumbs_up, thumbs_down, hidden)
-       VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, JSON.stringify(questions), created_by, created_by_id, thumbs_up || 0, thumbs_down || 0, hidden || false]
+      `INSERT INTO tests (name, questions, created_by, created_by_id, thumbs_up, thumbs_down, hidden, college, program, semester, professor)
+       VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [name, JSON.stringify(questions), created_by, created_by_id, thumbs_up || 0, thumbs_down || 0, hidden || false,
+       college || null, program || null, semester || null, professor || null]
     )
     res.json(rows[0])
   } catch (err) {
@@ -391,6 +399,40 @@ app.post('/api/notifications', async (req, res) => {
   }
 })
 
+// ── Verifications ─────────────────────────────────────────────────────────────
+
+app.get('/api/tests/:id/verifications', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT tv.id, tv.test_id, tv.user_id, tv.passed, tv.semester_taken, tv.profile_complete, tv.created_at
+       FROM test_verifications tv
+       WHERE tv.test_id = $1
+       ORDER BY tv.profile_complete DESC, tv.created_at DESC`,
+      [req.params.id]
+    )
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/verifications', async (req, res) => {
+  try {
+    const { test_id, user_id, passed, semester_taken, profile_complete } = req.body
+    const { rows } = await pool.query(
+      `INSERT INTO test_verifications (test_id, user_id, passed, semester_taken, profile_complete)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (test_id, user_id)
+       DO UPDATE SET passed = $3, semester_taken = $4, profile_complete = $5, created_at = NOW()
+       RETURNING *`,
+      [test_id, user_id, passed, semester_taken || null, profile_complete || false]
+    )
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── AI Validate ───────────────────────────────────────────────────────────────
 
 app.post('/api/validate', async (req, res) => {
@@ -424,4 +466,4 @@ app.get('*', (req, res) => {
 })
 
 const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log(`NursePrep listening on port ${PORT}`))
+app.listen(PORT, () => console.log(`Quiztagram listening on port ${PORT}`))

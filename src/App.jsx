@@ -7,12 +7,30 @@ import {
   getComments, insertComment, getWrongAnswers, incrementWrongAnswer,
   saveQuizResume, getQuizResume, deleteQuizResume, getTestStats,
   followUser, unfollowUser, checkFollow, getFollowers, getFollowing,
-  getNotifications, getUnreadNotificationCount, markNotificationsRead, createNotification
+  getNotifications, getUnreadNotificationCount, markNotificationsRead, createNotification,
+  getTestVerifications, upsertVerification
 } from './db'
 import { STYLES } from './styles'
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 const shuffle = arr => [...arr].sort(() => Math.random() - 0.5)
+
+const isProfileComplete = u => !!(u?.college && u?.program && u?.semester)
+
+const needsSemesterUpdate = u => {
+  if (!u?.enrolled && !u?.classes?.length) return false
+  if (!u?.classes_updated_at) return u?.enrolled || false
+  return Date.now() - new Date(u.classes_updated_at) > 120 * 86400000
+}
+
+const getSemesterOptions = () => {
+  const y = new Date().getFullYear()
+  const opts = []
+  for (let yr = y - 1; yr <= y + 1; yr++) {
+    opts.push(`Spring ${yr}`, `Summer ${yr}`, `Fall ${yr}`)
+  }
+  return opts
+}
 
 const ACHIEVEMENTS_DEF = [
   { id: 'first_test',       icon: '🎓', check: u => (u.session_count  || 0) >= 1  },
@@ -112,6 +130,7 @@ export default function App() {
     addTest:        <AddTestScreen {...commonProps} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
     guide:          <GuideScreen {...commonProps} />,
     invites:        <InvitesScreen {...commonProps} />,
+    achievements:   <AchievementsScreen {...commonProps} />,
     testDetail:     <TestDetailScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
     submissions:    <SubmissionsScreen {...commonProps} />,
     profile:        <ProfileScreen {...commonProps} doUpdateUser={doUpdateUser} />,
@@ -165,6 +184,7 @@ const Icon = ({ name, size = 22, color = 'currentColor' }) => {
     camera:   <><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" strokeWidth="1.6" stroke={color} fill="none"/><circle cx="12" cy="13" r="4" strokeWidth="1.6" stroke={color} fill="none"/></>,
     bell:     <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" strokeWidth="1.6" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
     search:   <><circle cx="11" cy="11" r="8" strokeWidth="1.6" stroke={color} fill="none"/><path d="M21 21l-4.35-4.35" strokeWidth="1.8" stroke={color} strokeLinecap="round"/></>,
+    medal:    <><circle cx="12" cy="8" r="5" strokeWidth="1.6" stroke={color} fill="none"/><path d="M8.21 13.89L7 23l5-3 5 3-1.21-9.12" strokeWidth="1.6" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
   }
   return <svg viewBox="0 0 24 24" style={s} xmlns="http://www.w3.org/2000/svg">{paths[name]}</svg>
 }
@@ -175,6 +195,9 @@ function Sidebar({ navigate, screen, user, logout, t, theme, toggleTheme, toggle
     { id: 'home',          icon: 'home',   label: 'Home' },
     { id: 'leaderboard',   icon: 'trophy', label: t.leaderboard },
     { id: 'addTest',       icon: 'plus',   label: t.addTest },
+    { id: 'guide',         icon: 'camera', label: t.createGuide },
+    { id: 'invites',       icon: 'link',   label: t.inviteFriends },
+    { id: 'achievements',  icon: 'medal',  label: t.myAchievements },
     { id: 'notifications', icon: 'bell',   label: t.notifications },
     { id: 'profile',       icon: 'person', label: t.profile },
   ]
@@ -342,6 +365,13 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout,
         <p className="hero-sub">{t.readyToStudy}</p>
       </div>
 
+      {needsSemesterUpdate(user) && (
+        <div className="semester-reminder">
+          <span>{t.semesterReminder}</span>
+          <button className="btn-primary sm" onClick={() => navigate('profile')}>{t.updateNow}</button>
+        </div>
+      )}
+
       <div className="search-bar-wrap">
         <div className="search-bar-inner">
           <span className="search-bar-icon"><Icon name="search" size={16} /></span>
@@ -376,6 +406,13 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout,
                 <div style={{ minWidth:0 }}>
                   <div style={{ fontWeight:'600', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{selected.name}</div>
                   <div style={{ fontSize:'0.76rem', color:'var(--muted)', marginTop:'2px' }}>by {selected.created_by} · {selected.questions?.length} {t.questions}</div>
+                  {(selected.college || selected.program || selected.semester) && (
+                    <div className="meta-badge">
+                      {selected.college  && <span className="meta-tag">{selected.college}</span>}
+                      {selected.program  && <span className="meta-tag">{selected.program}</span>}
+                      {selected.semester && <span className="meta-tag">{selected.semester}</span>}
+                    </div>
+                  )}
                 </div>
                 <button className="btn-ghost" style={{ fontSize:'0.78rem', padding:'6px 14px', flexShrink:0 }} onClick={() => navigate('testDetail', { testId: selectedTest })}>
                   View
@@ -400,16 +437,6 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout,
           </div>
         </>
       )}
-
-      <div className="section" style={{ paddingBottom:'10px' }}>
-        <label className="section-label">{t.tools}</label>
-        <div className="tool-row">
-          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('addTest')}><Icon name="upload" size={18} /> {t.addTest}</button>
-          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('guide')}><Icon name="camera" size={18} /> {t.createGuide}</button>
-          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('invites')}><Icon name="link" size={18} /> {t.inviteFriends}</button>
-          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('submissions')}><Icon name="list" size={18} /> {t.submissions}</button>
-        </div>
-      </div>
 
       <BottomNav navigate={navigate} screen="home" notifCount={notifCount} />
     </div>
@@ -847,6 +874,7 @@ function LeaderboardScreen({ user, t, topBar, navigate }) {
   const [rows, setRows]           = useState([])
   const [reviewerIds, setReviewerIds] = useState(new Set())
   const [followingSet, setFollowingSet] = useState(new Set())
+  const [filter, setFilter]       = useState('everyone')
 
   useEffect(() => {
     (async () => {
@@ -876,6 +904,9 @@ function LeaderboardScreen({ user, t, topBar, navigate }) {
 
   const medal = i => i===0?'gold':i===1?'silver':i===2?'bronze':''
   const displayName = u => u.display_name || u.username
+  const displayRows = filter === 'following'
+    ? rows.filter(u => followingSet.has(u.id) || u.id === user?.id)
+    : rows
 
   return (
     <div className="screen">
@@ -883,10 +914,14 @@ function LeaderboardScreen({ user, t, topBar, navigate }) {
         <span className="logo-sm">Quiztagram</span>
         <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{t.leaderboard}</span>
       </div>
-      <div style={{ padding:'12px 0 0' }}>
-        {rows.length===0 && <p className="no-data">{t.noHistory}</p>}
+      <div style={{ padding:'12px 16px 4px', display:'flex', gap:'8px' }}>
+        <button className={`filter-chip${filter==='everyone'?' active':''}`} onClick={() => setFilter('everyone')}>{t.filterEveryone}</button>
+        <button className={`filter-chip${filter==='following'?' active':''}`} onClick={() => setFilter('following')}>{t.filterFollowing}</button>
+      </div>
+      <div style={{ padding:'8px 0 0' }}>
+        {displayRows.length===0 && <p className="no-data">{filter==='following' ? 'Follow someone to see them here.' : t.noHistory}</p>}
         <div className="leaderboard-list">
-          {rows.map((u,i) => (
+          {displayRows.map((u,i) => (
             <div key={u.id} className="lb-row">
               <span className={`lb-rank ${medal(i)}`}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</span>
               <span className="lb-name">{displayName(u)}{reviewerIds.has(u.id)&&<span className="reviewer-badge">⭐ Reviewer</span>}</span>
@@ -998,11 +1033,15 @@ function TestDetailScreen({ user, t, lang, data, navigate, doUpdateUser, checkAc
   const [reportReason, setReportReason] = useState('')
   const [showReport, setShowReport] = useState(false)
   const [reported, setReported] = useState(false)
+  const [verifications, setVerifications] = useState([])
+  const [showVerifyForm, setShowVerifyForm] = useState(false)
+  const [verifyPassed, setVerifyPassed] = useState(null)
 
   useEffect(() => {
     if (!data?.testId) return
     getTestById(data.testId).then(setTest)
     getComments(data.testId).then(setComments)
+    getTestVerifications(data.testId).then(setVerifications)
   }, [])
 
   const rate = async (up) => {
@@ -1043,6 +1082,24 @@ function TestDetailScreen({ user, t, lang, data, navigate, doUpdateUser, checkAc
     setReported(true); setShowReport(false)
   }
 
+  const myVerification  = verifications.find(v => v.user_id === user.id) || null
+  const totalVerified   = verifications.length
+  const totalPassed     = verifications.filter(v => v.passed).length
+  const passRate        = totalVerified > 0 ? Math.round((totalPassed / totalVerified) * 100) : 0
+  const canVerify       = isProfileComplete(user)
+
+  const submitVerification = async () => {
+    if (verifyPassed === null) return
+    const result = await upsertVerification({
+      test_id: data.testId, user_id: user.id, passed: verifyPassed,
+      semester_taken: user.semester || null, profile_complete: canVerify,
+    })
+    if (result) {
+      setVerifications(vs => [...vs.filter(v => v.user_id !== user.id), result])
+      setShowVerifyForm(false)
+    }
+  }
+
   if (!test) return <div className="screen">{topBar('Test','home')}<div className="no-data">Loading…</div></div>
   const myRating = (test.user_ratings||{})[user.id]
 
@@ -1055,8 +1112,50 @@ function TestDetailScreen({ user, t, lang, data, navigate, doUpdateUser, checkAc
             <span className="test-stat">👤 {test.created_by}</span>
             <span className="test-stat">📝 {test.questions?.length} {t.questions}</span>
           </div>
+          {(test.college || test.program || test.semester) && (
+            <div className="meta-badge">
+              {test.college  && <span className="meta-tag">{test.college}</span>}
+              {test.program  && <span className="meta-tag">{test.program}</span>}
+              {test.semester && <span className="meta-tag">{test.semester}</span>}
+            </div>
+          )}
           {test.flagged && !test.reviewed && <div className="flagged-badge" style={{ marginTop:'10px' }}>{t.flagged}</div>}
           {test.reviewed && <div className="reviewed-badge" style={{ marginTop:'10px' }}>{t.reviewed}</div>}
+        </div>
+
+        {/* ── Verification Card ── */}
+        <div className="card">
+          <div className="section-title">{t.verifyTitle}</div>
+          {totalVerified > 0 && (
+            <div className="verify-stats">
+              <div className="verify-stat"><div className="verify-stat-val">{totalVerified}</div><div className="verify-stat-lbl">{t.verifiedCount}</div></div>
+              <div className="verify-stat"><div className="verify-stat-val">{totalPassed}</div><div className="verify-stat-lbl">{t.passedCount}</div></div>
+              <div className="verify-stat"><div className="verify-stat-val">{passRate}%</div><div className="verify-stat-lbl">{t.passRate}</div></div>
+            </div>
+          )}
+          {myVerification && !showVerifyForm && (
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
+              <span style={{ fontSize:'0.83rem', color:'var(--muted)' }}>{t.verifyMine} {myVerification.passed ? '✅' : '❌'}</span>
+              <button className="btn-ghost" style={{ fontSize:'0.78rem', padding:'5px 12px' }} onClick={() => { setVerifyPassed(myVerification.passed); setShowVerifyForm(true) }}>{t.verifyUpdate}</button>
+            </div>
+          )}
+          {!myVerification && !showVerifyForm && (
+            canVerify
+              ? <button className="btn-ghost" onClick={() => setShowVerifyForm(true)}>{t.verifyBtn}</button>
+              : <p className="verify-note">{t.verifyNeedProfile}</p>
+          )}
+          {showVerifyForm && (
+            <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+              <div className="verify-pass-row">
+                <button className={`verify-btn pass${verifyPassed===true?' active':''}`} onClick={() => setVerifyPassed(true)}>{t.verifyPassed}</button>
+                <button className={`verify-btn fail${verifyPassed===false?' active':''}`} onClick={() => setVerifyPassed(false)}>{t.verifyFailed}</button>
+              </div>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button className="btn-primary full" onClick={submitVerification} disabled={verifyPassed===null}>{t.verifySubmit}</button>
+                <button className="btn-ghost" onClick={() => setShowVerifyForm(false)}>{t.cancel}</button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="card">
           <div className="section-title">{t.rateTest}</div>
@@ -1108,6 +1207,10 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
   const [err, setErr]     = useState('')
   const [loading, setLoading] = useState(false)
   const [tags, setTags]   = useState([])
+  const [metaCollege, setMetaCollege]   = useState(user.college || '')
+  const [metaProgram, setMetaProgram]   = useState(user.program || '')
+  const [metaSemester, setMetaSemester] = useState(user.semester || '')
+  const profileFilled = isProfileComplete(user)
 
   const handleFileUpload = e => {
     const file = e.target.files[0]
@@ -1150,6 +1253,10 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
       name: name.trim(), questions: parsed,
       created_by: user.username, created_by_id: user.id,
       thumbs_up: 0, thumbs_down: 0, hidden: false,
+      college: metaCollege.trim() || null,
+      program: metaProgram.trim() || null,
+      semester: metaSemester || null,
+      professor: user.professor || null,
     })
     if (!inserted) { setErr('Failed to save test. Check your connection.'); setLoading(false); return }
 
@@ -1162,6 +1269,10 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
   return (
     <div className="screen">{topBar(t.addTest, 'home')}
       <div className="add-test-form">
+        <div className="alert alert-info" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px' }}>
+          <span style={{ fontSize:'0.83rem' }}>Need help creating a test with AI?</span>
+          <button className="btn-primary sm" onClick={() => navigate('guide')}>{t.createGuide}</button>
+        </div>
         <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
         <textarea className="textarea" placeholder={t.pasteJSON} value={json} onChange={e => setJson(e.target.value)} rows={8} />
         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
@@ -1170,6 +1281,18 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
             <Icon name="upload" size={16} /> {t.uploadJSON}
             <input type="file" accept=".json,application/json" onChange={handleFileUpload} style={{ display:'none' }} />
           </label>
+        </div>
+        <div>
+          <label className="section-label">{t.testOrigin}</label>
+          {!profileFilled && <p className="verify-note" style={{ marginBottom:'8px' }}>{t.testOriginNote}</p>}
+          <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+            <input className="field" placeholder={t.collegePlaceholder} value={metaCollege} onChange={e => setMetaCollege(e.target.value)} />
+            <input className="field" placeholder={t.programPlaceholder} value={metaProgram} onChange={e => setMetaProgram(e.target.value)} />
+            <select className="select" value={metaSemester} onChange={e => setMetaSemester(e.target.value)}>
+              <option value="">{t.semesterLabel}…</option>
+              {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
         {tags.length > 0 && (
           <div><label className="section-label">AI Suggested Topics</label>
@@ -1248,6 +1371,28 @@ function InvitesScreen({ user, t, topBar }) {
   )
 }
 
+// ─── ACHIEVEMENTS ─────────────────────────────────────────────────────────────
+function AchievementsScreen({ user, t, topBar }) {
+  const earned = user.achievements || []
+  return (
+    <div className="screen">{topBar(t.myAchievements, 'home')}
+      <div style={{ padding:'12px 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
+        {ACHIEVEMENTS_DEF.map(def => {
+          const isEarned = earned.includes(def.id)
+          return (
+            <div key={def.id} className="card" style={{ textAlign:'center', opacity: isEarned ? 1 : 0.35 }}>
+              <div style={{ fontSize:'2rem', marginBottom:'8px' }}>{def.icon}</div>
+              <div style={{ fontWeight:'700', fontSize:'0.85rem' }}>{t.achievements[def.id]?.title}</div>
+              <div style={{ fontSize:'0.73rem', color:'var(--muted)', marginTop:'4px', lineHeight:1.4 }}>{t.achievements[def.id]?.desc}</div>
+              {isEarned && <div style={{ fontSize:'0.7rem', color:'var(--success)', marginTop:'6px', fontWeight:600 }}>✓ {t.earnedLabel}</div>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── SUBMISSIONS ──────────────────────────────────────────────────────────────
 function SubmissionsScreen({ user, t, navigate, topBar }) {
   const [tests, setTests] = useState([])
@@ -1313,6 +1458,15 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
   const [followers, setFollowers]           = useState([])
   const [following, setFollowing]           = useState([])
   const [followTab, setFollowTab]           = useState(null)
+  // Academic demographics
+  const [college, setCollege]         = useState(user.college||'')
+  const [program, setProgram]         = useState(user.program||'')
+  const [semester, setSemester]       = useState(user.semester||'')
+  const [enrolled, setEnrolled]       = useState(user.enrolled||false)
+  const [classes, setClasses]         = useState(user.classes||[])
+  const [newClass, setNewClass]       = useState('')
+  const [professor, setProfessor]     = useState(user.professor||'')
+  const [demoPrivacy, setDemoPrivacy] = useState(user.demographics_privacy||'private')
 
   useEffect(() => {
     (async () => {
@@ -1332,8 +1486,21 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
   }, [])
 
   const save = async () => {
-    await doUpdateUser({ profile_private: profilePrivate, display_name: displayName.trim() || null, show_to_mutual_only: mutualOnly })
-    setSaved(true); setTimeout(()=>setSaved(false),2000)
+    const classesChanged = JSON.stringify(classes) !== JSON.stringify(user.classes || [])
+    await doUpdateUser({
+      profile_private: profilePrivate,
+      display_name: displayName.trim() || null,
+      show_to_mutual_only: mutualOnly,
+      college: college.trim() || null,
+      program: program.trim() || null,
+      semester: semester || null,
+      enrolled,
+      classes,
+      professor: professor.trim() || null,
+      demographics_privacy: demoPrivacy,
+      ...(classesChanged ? { classes_updated_at: new Date().toISOString() } : {}),
+    })
+    setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
 
   if (followTab) return (
@@ -1391,7 +1558,7 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
         </div>
         {(user.achievements||[]).length > 0 && (
           <div className="card">
-            <div className="section-title">🏆 Achievements</div>
+            <div className="section-title">Achievements</div>
             <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
               {user.achievements.map(id => {
                 const def = ACHIEVEMENTS_DEF.find(a => a.id === id)
@@ -1400,6 +1567,65 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
             </div>
           </div>
         )}
+        <button className="btn-ghost" style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', justifyContent:'flex-start' }} onClick={() => navigate('submissions')}>
+          <Icon name="list" size={18} /> {t.submissions}
+        </button>
+
+        {/* ── Academic Profile ── */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'6px' }}>
+          <label className="section-label" style={{ margin:0 }}>{t.academicProfile}</label>
+          {isProfileComplete({ college, program, semester })
+            ? <span className="profile-complete-badge">{t.profileComplete}</span>
+            : <span className="profile-incomplete-badge">{t.profileIncomplete}</span>}
+        </div>
+        {needsSemesterUpdate({ ...user, classes, enrolled, classes_updated_at: user.classes_updated_at }) && (
+          <div className="semester-reminder">
+            <span>{t.semesterReminder}</span>
+          </div>
+        )}
+        <div className="demo-section">
+          <input className="field" placeholder={t.collegePlaceholder} value={college} onChange={e => setCollege(e.target.value)} />
+          <input className="field" placeholder={t.programPlaceholder} value={program} onChange={e => setProgram(e.target.value)} />
+          <select className="select" value={semester} onChange={e => setSemester(e.target.value)}>
+            <option value="">{t.semesterLabel}…</option>
+            {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <div className="toggle-row">
+            <div><div className="toggle-label">{t.enrolledLabel}</div></div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={enrolled} onChange={e => setEnrolled(e.target.checked)} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+          <div>
+            <label className="section-label">{t.classesLabel}</label>
+            <div className="class-list">
+              {classes.map((cls, i) => (
+                <span key={i} className="class-chip">
+                  {cls}
+                  <button className="class-chip-remove" onClick={() => setClasses(c => c.filter((_, j) => j !== i))}>×</button>
+                </span>
+              ))}
+            </div>
+            <div className="class-add-row">
+              <input className="field" style={{ flex:1 }} placeholder={t.addClassPlaceholder} value={newClass}
+                onChange={e => setNewClass(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && newClass.trim()) { setClasses(c => [...c, newClass.trim()]); setNewClass('') } }} />
+              <button className="btn-primary sm" onClick={() => { if (newClass.trim()) { setClasses(c => [...c, newClass.trim()]); setNewClass('') } }}>{t.addClass}</button>
+            </div>
+          </div>
+          <input className="field" placeholder={t.professorPlaceholder} value={professor} onChange={e => setProfessor(e.target.value)} />
+          <div>
+            <label className="section-label">{t.demoPrivacyLabel}</label>
+            <div className="privacy-chip-row">
+              {[['private', t.privacyOnlyMe], ['mutuals', t.privacyMutuals], ['public', t.privacyEveryone]].map(([val, label]) => (
+                <button key={val} className={`privacy-chip${demoPrivacy === val ? ' active' : ''}`} onClick={() => setDemoPrivacy(val)}>{label}</button>
+              ))}
+            </div>
+            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'5px' }}>{t.professorPrivateNote}</p>
+          </div>
+        </div>
+
         <label className="section-label" style={{ marginTop:'6px' }}>Privacy & Display</label>
         <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
           <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
