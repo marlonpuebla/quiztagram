@@ -5,7 +5,9 @@ import {
   getTests, getTestById, insertTest, updateTest, deleteTest, getUserTests,
   insertSession, getUserSessions, getSessionById, getPublicUsers, getAllUsers,
   getComments, insertComment, getWrongAnswers, incrementWrongAnswer,
-  saveQuizResume, getQuizResume, deleteQuizResume, getTestStats
+  saveQuizResume, getQuizResume, deleteQuizResume, getTestStats,
+  followUser, unfollowUser, checkFollow, getFollowers, getFollowing,
+  getNotifications, getUnreadNotificationCount, markNotificationsRead, createNotification
 } from './db'
 import { STYLES } from './styles'
 
@@ -32,7 +34,19 @@ export default function App() {
   const [screenData, setScreenData] = useState(null)
   const [toast, setToast]       = useState(null)
   const [toastOut, setToastOut] = useState(false)
+  const [notifCount, setNotifCount] = useState(0)
   const t = T[lang]
+
+  useEffect(() => {
+    document.documentElement.className = theme
+  }, [theme])
+
+  useEffect(() => {
+    if (!user) return
+    getUnreadNotificationCount(user.id).then(setNotifCount)
+    const interval = setInterval(() => getUnreadNotificationCount(user.id).then(setNotifCount), 60000)
+    return () => clearInterval(interval)
+  }, [user])
 
   const toggleTheme = () => setTheme(th => { const n = th === 'dark' ? 'light' : 'dark'; localStorage.setItem('np_theme', n); return n })
   const toggleLang  = () => setLang(l  => { const n = l  === 'en'   ? 'es'    : 'en';   localStorage.setItem('np_lang',  n); return n })
@@ -85,20 +99,22 @@ export default function App() {
   )
 
   const commonProps = { user, t, lang, theme, toggleTheme, toggleLang, navigate, topBar, currentScreen: screen }
+  const showSidebar = user && screen !== 'auth' && screen !== 'changePassword'
 
   const screens = {
-    auth:        <AuthScreen {...commonProps} onLogin={login} />,
-    home:        <HomeScreen {...commonProps} logout={logout} />,
-    quiz:        <QuizScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
-    remedial:    <RemedialScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
-    leaderboard: <LeaderboardScreen {...commonProps} />,
-    history:     <HistoryScreen {...commonProps} />,
-    addTest:     <AddTestScreen {...commonProps} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
-    guide:       <GuideScreen {...commonProps} />,
-    invites:     <InvitesScreen {...commonProps} />,
-    testDetail:  <TestDetailScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
-    submissions: <SubmissionsScreen {...commonProps} />,
-    profile:     <ProfileScreen {...commonProps} doUpdateUser={doUpdateUser} />,
+    auth:           <AuthScreen {...commonProps} onLogin={login} />,
+    home:           <HomeScreen {...commonProps} logout={logout} notifCount={notifCount} />,
+    quiz:           <QuizScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
+    remedial:       <RemedialScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
+    leaderboard:    <LeaderboardScreen {...commonProps} />,
+    history:        <HistoryScreen {...commonProps} />,
+    notifications:  <NotificationsScreen {...commonProps} onRead={() => setNotifCount(0)} />,
+    addTest:        <AddTestScreen {...commonProps} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
+    guide:          <GuideScreen {...commonProps} />,
+    invites:        <InvitesScreen {...commonProps} />,
+    testDetail:     <TestDetailScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
+    submissions:    <SubmissionsScreen {...commonProps} />,
+    profile:        <ProfileScreen {...commonProps} doUpdateUser={doUpdateUser} />,
     results:        <ResultsScreen {...commonProps} data={screenData} />,
     review:         <ReviewScreen {...commonProps} data={screenData} />,
     changePassword: <ChangePasswordScreen {...commonProps} doUpdateUser={doUpdateUser} />,
@@ -107,7 +123,13 @@ export default function App() {
   return (
     <div className={`app ${theme}`}>
       <style>{STYLES}</style>
-      {screens[screen] || screens.home}
+      {showSidebar && (
+        <Sidebar navigate={navigate} screen={screen} user={user} logout={logout}
+          t={t} theme={theme} toggleTheme={toggleTheme} toggleLang={toggleLang} notifCount={notifCount} />
+      )}
+      <div className="main-content">
+        {screens[screen] || screens.home}
+      </div>
       {toast && (
         <div className={`achievement-toast${toastOut ? ' out' : ''}`}>
           <span className="toast-icon">{ACHIEVEMENTS_DEF.find(a => a.id === toast)?.icon}</span>
@@ -141,18 +163,50 @@ const Icon = ({ name, size = 22, color = 'currentColor' }) => {
     link:     <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" strokeWidth="1.6" stroke={color} strokeLinecap="round" fill="none"/></>,
     list:     <><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" strokeWidth="1.8" stroke={color} strokeLinecap="round"/></>,
     camera:   <><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" strokeWidth="1.6" stroke={color} fill="none"/><circle cx="12" cy="13" r="4" strokeWidth="1.6" stroke={color} fill="none"/></>,
+    bell:     <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" strokeWidth="1.6" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
+    search:   <><circle cx="11" cy="11" r="8" strokeWidth="1.6" stroke={color} fill="none"/><path d="M21 21l-4.35-4.35" strokeWidth="1.8" stroke={color} strokeLinecap="round"/></>,
   }
   return <svg viewBox="0 0 24 24" style={s} xmlns="http://www.w3.org/2000/svg">{paths[name]}</svg>
 }
 
-// ─── BOTTOM NAV ───────────────────────────────────────────────────────────────
-function BottomNav({ navigate, screen }) {
+// ─── SIDEBAR (desktop) ────────────────────────────────────────────────────────
+function Sidebar({ navigate, screen, user, logout, t, theme, toggleTheme, toggleLang, notifCount }) {
   const items = [
-    { id: 'home',        icon: 'home' },
-    { id: 'leaderboard', icon: 'trophy' },
-    { id: 'addTest',     icon: 'plus', create: true },
-    { id: 'history',     icon: 'bars' },
-    { id: 'profile',     icon: 'person' },
+    { id: 'home',          icon: 'home',   label: 'Home' },
+    { id: 'leaderboard',   icon: 'trophy', label: t.leaderboard },
+    { id: 'addTest',       icon: 'plus',   label: t.addTest },
+    { id: 'notifications', icon: 'bell',   label: t.notifications },
+    { id: 'profile',       icon: 'person', label: t.profile },
+  ]
+  return (
+    <nav className="sidebar">
+      <div className="sidebar-logo"><span className="logo-sm">Quiztagram</span></div>
+      <div className="sidebar-nav">
+        {items.map(item => (
+          <button key={item.id} className={`sidebar-item${screen === item.id ? ' active' : ''}`} onClick={() => navigate(item.id)}>
+            <Icon name={item.icon} size={22} />
+            <span>{item.label}</span>
+            {item.id === 'notifications' && notifCount > 0 && <span className="notif-badge">{notifCount}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="sidebar-footer">
+        <button className="sidebar-item" onClick={toggleLang}><Icon name="list" size={20} /><span>{t.switchLang}</span></button>
+        <button className="sidebar-item" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /><span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button>
+        <button className="sidebar-item" onClick={logout}><Icon name="logout" size={20} /><span>{t.logout}</span></button>
+      </div>
+    </nav>
+  )
+}
+
+// ─── BOTTOM NAV (mobile) ──────────────────────────────────────────────────────
+function BottomNav({ navigate, screen, notifCount = 0 }) {
+  const items = [
+    { id: 'home',          icon: 'home' },
+    { id: 'leaderboard',   icon: 'trophy' },
+    { id: 'addTest',       icon: 'plus', create: true },
+    { id: 'notifications', icon: 'bell' },
+    { id: 'profile',       icon: 'person' },
   ]
   return (
     <nav className="bottom-nav">
@@ -160,7 +214,12 @@ function BottomNav({ navigate, screen }) {
         <button key={item.id} className={`nav-item${screen === item.id ? ' active' : ''}`} onClick={() => navigate(item.id)}>
           {item.create
             ? <span className="nav-icon-create"><Icon name={item.icon} size={18} /></span>
-            : <Icon name={item.icon} size={24} />
+            : (
+              <div className="nav-notif-wrap">
+                <Icon name={item.icon} size={24} />
+                {item.id === 'notifications' && notifCount > 0 && <span className="nav-notif-dot" />}
+              </div>
+            )
           }
         </button>
       ))}
@@ -252,18 +311,20 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin }) {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────────────────────
-function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout }) {
-  const [tests, setTests]               = useState([])
+function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout, notifCount }) {
+  const [allTests, setAllTests]         = useState([])
+  const [search, setSearch]             = useState('')
   const [selectedTest, setSelectedTest] = useState(null)
 
   useEffect(() => {
     getTests().then(data => {
-      setTests(data)
+      setAllTests(data)
       if (data.length) setSelectedTest(data[0].id)
     })
   }, [])
 
-  const selected = tests.find(tt => tt.id === selectedTest)
+  const tests = search ? allTests.filter(tt => tt.name.toLowerCase().includes(search.toLowerCase()) || (tt.created_by || '').toLowerCase().includes(search.toLowerCase())) : allTests
+  const selected = tests.find(tt => tt.id === selectedTest) || (tests.length ? tests[0] : null)
 
   return (
     <div className="screen">
@@ -281,7 +342,14 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
         <p className="hero-sub">{t.readyToStudy}</p>
       </div>
 
-      {tests.length === 0 ? (
+      <div className="search-bar-wrap">
+        <div className="search-bar-inner">
+          <span className="search-bar-icon"><Icon name="search" size={16} /></span>
+          <input className="search-bar" placeholder={t.searchTests} value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </div>
+
+      {allTests.length === 0 ? (
         <div className="empty-state">
           <p>{t.noTests}</p>
           <button className="btn-primary" onClick={() => navigate('addTest')}>+ {t.addTest}</button>
@@ -343,7 +411,7 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
         </div>
       </div>
 
-      <BottomNav navigate={navigate} screen="home" />
+      <BottomNav navigate={navigate} screen="home" notifCount={notifCount} />
     </div>
   )
 }
@@ -775,9 +843,11 @@ function ResultsScreen({ t, lang, data, navigate, topBar }) {
 }
 
 // ─── LEADERBOARD ─────────────────────────────────────────────────────────────
-function LeaderboardScreen({ t, topBar, navigate }) {
+function LeaderboardScreen({ user, t, topBar, navigate }) {
   const [rows, setRows]           = useState([])
   const [reviewerIds, setReviewerIds] = useState(new Set())
+  const [followingSet, setFollowingSet] = useState(new Set())
+
   useEffect(() => {
     (async () => {
       const all   = await getAllUsers()
@@ -786,9 +856,27 @@ function LeaderboardScreen({ t, topBar, navigate }) {
       const byAcc     = [...all].sort((a,b)=>(b.overall_accuracy||0)-(a.overall_accuracy||0)).slice(0,5).map(u=>u.id)
       setReviewerIds(new Set([...bySession,...byAcc]))
       setRows(pub)
+      if (user) {
+        const following = await getFollowing(user.id)
+        setFollowingSet(new Set(following.map(u => u.id)))
+      }
     })()
   }, [])
+
+  const toggleFollow = async (targetUser) => {
+    if (!user || targetUser.id === user.id) return
+    if (followingSet.has(targetUser.id)) {
+      await unfollowUser(user.id, targetUser.id)
+      setFollowingSet(s => { const n = new Set(s); n.delete(targetUser.id); return n })
+    } else {
+      await followUser(user.id, user.username, targetUser.id)
+      setFollowingSet(s => new Set([...s, targetUser.id]))
+    }
+  }
+
   const medal = i => i===0?'gold':i===1?'silver':i===2?'bronze':''
+  const displayName = u => u.display_name || u.username
+
   return (
     <div className="screen">
       <div className="top-bar">
@@ -801,10 +889,17 @@ function LeaderboardScreen({ t, topBar, navigate }) {
           {rows.map((u,i) => (
             <div key={u.id} className="lb-row">
               <span className={`lb-rank ${medal(i)}`}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</span>
-              <span className="lb-name">{u.username}{reviewerIds.has(u.id)&&<span className="reviewer-badge">⭐ Reviewer</span>}</span>
-              <div style={{ textAlign:'right' }}>
-                <div className="lb-acc">{u.overall_accuracy||0}%</div>
-                <div className="lb-sessions">{u.session_count||0} {t.sessions}</div>
+              <span className="lb-name">{displayName(u)}{reviewerIds.has(u.id)&&<span className="reviewer-badge">⭐ Reviewer</span>}</span>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                <div style={{ textAlign:'right' }}>
+                  <div className="lb-acc">{u.overall_accuracy||0}%</div>
+                  <div className="lb-sessions">{u.session_count||0} {t.sessions}</div>
+                </div>
+                {user && u.id !== user.id && (
+                  <button className={`follow-btn ${followingSet.has(u.id) ? 'following' : 'not-following'}`} onClick={() => toggleFollow(u)}>
+                    {followingSet.has(u.id) ? t.unfollow : t.follow}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -838,6 +933,59 @@ function HistoryScreen({ user, t, topBar, navigate }) {
         </div>
       </div>
       <BottomNav navigate={navigate} screen="history" />
+    </div>
+  )
+}
+
+// ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
+function NotificationsScreen({ user, t, navigate, topBar, onRead }) {
+  const [notifs, setNotifs] = useState([])
+
+  useEffect(() => {
+    getNotifications(user.id).then(data => {
+      setNotifs(data)
+      markNotificationsRead(user.id)
+      if (onRead) onRead()
+    })
+  }, [])
+
+  const notifText = n => {
+    if (n.type === 'new_follower') return <><strong>{n.actor_username}</strong> {t.notifNewFollower}</>
+    if (n.type === 'new_comment')  return <><strong>{n.actor_username}</strong> {t.notifNewComment} <em>{n.data?.test_name}</em></>
+    if (n.type === 'new_like')     return <><strong>{n.actor_username}</strong> {t.notifNewLike} <em>{n.data?.test_name}</em></>
+    return n.type
+  }
+
+  const timeAgo = ts => {
+    const diff = Date.now() - new Date(ts)
+    if (diff < 60000) return 'just now'
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`
+    return `${Math.floor(diff/86400000)}d ago`
+  }
+
+  return (
+    <div className="screen">
+      <div className="top-bar">
+        <span className="logo-sm">Quiztagram</span>
+        <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{t.notifications}</span>
+      </div>
+      <div style={{ padding:'12px 0 0' }}>
+        {notifs.length === 0 && <p className="no-data">{t.noNotifications}</p>}
+        <div className="notif-list">
+          {notifs.map(n => (
+            <div key={n.id} className={`notif-row${!n.read ? ' unread' : ''}`}>
+              <div className="notif-avatar">{(n.actor_username||'?')[0].toUpperCase()}</div>
+              <div className="notif-body">
+                <div className="notif-text">{notifText(n)}</div>
+                <div className="notif-time">{timeAgo(n.created_at)}</div>
+              </div>
+              {!n.read && <div className="notif-unread-dot" />}
+            </div>
+          ))}
+        </div>
+      </div>
+      <BottomNav navigate={navigate} screen="notifications" />
     </div>
   )
 }
@@ -961,6 +1109,14 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
   const [loading, setLoading] = useState(false)
   const [tags, setTags]   = useState([])
 
+  const handleFileUpload = e => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setJson(ev.target.result)
+    reader.readAsText(file)
+  }
+
   const handleAdd = async () => {
     if (!name.trim()) return setErr('Enter a test name.')
     if (!json.trim())  return setErr('Paste the JSON first.')
@@ -1008,6 +1164,13 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
       <div className="add-test-form">
         <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
         <textarea className="textarea" placeholder={t.pasteJSON} value={json} onChange={e => setJson(e.target.value)} rows={8} />
+        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+          <span style={{ fontSize:'0.78rem', color:'var(--muted)' }}>— or —</span>
+          <label className="btn-ghost" style={{ cursor:'pointer', fontSize:'0.82rem', padding:'8px 14px', display:'inline-flex', alignItems:'center', gap:'6px' }}>
+            <Icon name="upload" size={16} /> {t.uploadJSON}
+            <input type="file" accept=".json,application/json" onChange={handleFileUpload} style={{ display:'none' }} />
+          </label>
+        </div>
         {tags.length > 0 && (
           <div><label className="section-label">AI Suggested Topics</label>
             <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
@@ -1027,24 +1190,32 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
 
 // ─── GUIDE ────────────────────────────────────────────────────────────────────
 function GuideScreen({ t, navigate, topBar }) {
-  const [copied, setCopied] = useState(false)
-  const copy = async () => { try { await navigator.clipboard.writeText(t.guidePrompt); setCopied(true); setTimeout(()=>setCopied(false),2500) } catch {} }
+  const download = () => {
+    const blob = new Blob([t.guidePrompt], { type: 'text/markdown' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = 'quiztagram-prompt.md'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
   const steps = [t.guideStep1, t.guideStep2, t.guideStep3, t.guideStep4, t.guideStep5]
   return (
     <div className="screen">{topBar(t.guideTitle, 'home')}
       <div className="guide-content">
+        <div className="alert alert-info">{t.aiCompat}</div>
         {steps.map((step, i) => (
           <div key={i} className="guide-step">
             <div className="guide-step-title">{step}</div>
             {i === 2 && <>
               <div className="guide-prompt-box">{t.guidePrompt}</div>
-              <button className="btn-ghost copy-prompt-btn" onClick={copy} style={{ width:'100%', marginTop:'8px' }}>
-                {copied ? '✅ '+t.copied : '📋 '+t.copy+' Prompt'}
+              <button className="btn-primary full" onClick={download} style={{ marginTop:'8px' }}>
+                ⬇ {t.downloadPrompt}
               </button>
             </>}
           </div>
         ))}
-        <div className="alert alert-info">💡 The AI will validate your content and auto-suggest topic & difficulty tags.</div>
+        <div className="alert alert-warn">🔬 {t.pubmedNote}</div>
       </div>
     </div>
   )
@@ -1134,9 +1305,14 @@ function SubmissionCard({ test, t, onToggleHide, onDelete, onViewDetail }) {
 // ─── PROFILE ─────────────────────────────────────────────────────────────────
 function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
   const [profilePrivate, setProfilePrivate] = useState(user.profile_private||false)
-  const [saved, setSaved] = useState(false)
+  const [displayName, setDisplayName]       = useState(user.display_name||'')
+  const [mutualOnly, setMutualOnly]         = useState(user.show_to_mutual_only||false)
+  const [saved, setSaved]                   = useState(false)
   const [reviewEligible, setReviewEligible] = useState(false)
-  const [flaggedTests, setFlaggedTests] = useState([])
+  const [flaggedTests, setFlaggedTests]     = useState([])
+  const [followers, setFollowers]           = useState([])
+  const [following, setFollowing]           = useState([])
+  const [followTab, setFollowTab]           = useState(null)
 
   useEffect(() => {
     (async () => {
@@ -1147,14 +1323,42 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
       setReviewEligible(isEligible)
       if (isEligible) {
         const tests = await getTests()
-        setFlaggedTests(tests.filter(t => t.flagged && !t.reviewed))
+        setFlaggedTests(tests.filter(tt => tt.flagged && !tt.reviewed))
       }
+      const [frs, fng] = await Promise.all([getFollowers(user.id), getFollowing(user.id)])
+      setFollowers(frs)
+      setFollowing(fng)
     })()
   }, [])
 
   const save = async () => {
-    await doUpdateUser({ profile_private: profilePrivate }); setSaved(true); setTimeout(()=>setSaved(false),2000)
+    await doUpdateUser({ profile_private: profilePrivate, display_name: displayName.trim() || null, show_to_mutual_only: mutualOnly })
+    setSaved(true); setTimeout(()=>setSaved(false),2000)
   }
+
+  if (followTab) return (
+    <div className="screen">
+      <div className="top-bar">
+        <button className="back-btn" onClick={() => setFollowTab(null)}><Icon name="back" size={22} /></button>
+        <span className="page-title">{followTab === 'followers' ? t.followers : t.following}</span>
+      </div>
+      <div style={{ padding:'12px 16px', display:'flex', flexDirection:'column', gap:'10px' }}>
+        {(followTab === 'followers' ? followers : following).map(u => (
+          <div key={u.id} className="lb-row" style={{ borderRadius:'var(--radius-sm)', border:'1px solid var(--border)' }}>
+            <div style={{ width:36, height:36, borderRadius:'50%', background:'var(--ig-gradient)', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:700, fontSize:'0.9rem', flexShrink:0 }}>
+              {(u.display_name || u.username)[0].toUpperCase()}
+            </div>
+            <span className="lb-name">{u.display_name || u.username}</span>
+            <div style={{ textAlign:'right' }}>
+              <div className="lb-acc">{u.overall_accuracy||0}%</div>
+              <div className="lb-sessions">{u.session_count||0} sessions</div>
+            </div>
+          </div>
+        ))}
+        {(followTab === 'followers' ? followers : following).length === 0 && <p className="no-data">{followTab === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}</p>}
+      </div>
+    </div>
+  )
 
   return (
     <div className="screen">
@@ -1166,14 +1370,24 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
         <div style={{ display:'flex', alignItems:'center', gap:'24px', padding:'16px 0 8px' }}>
           <div className="profile-avatar"><div className="profile-avatar-inner">{user.username[0].toUpperCase()}</div></div>
           <div>
-            <div className="profile-name">{user.username}</div>
+            <div className="profile-name">{user.display_name || user.username}</div>
+            {user.display_name && <div className="profile-meta">@{user.username}</div>}
             <div className="profile-meta" style={{ marginTop:'4px' }}>{user.upload_count||0} tests uploaded</div>
           </div>
         </div>
         <div className="profile-stats-row">
-          <div className="profile-stat-item"><div className="profile-stat-num">{user.session_count||0}</div><div className="profile-stat-lbl">Sessions</div></div>
-          <div className="profile-stat-item"><div className="profile-stat-num">{user.overall_accuracy||0}%</div><div className="profile-stat-lbl">Accuracy</div></div>
-          <div className="profile-stat-item"><div className="profile-stat-num">{user.perfect_streak||0}</div><div className="profile-stat-lbl">Streak</div></div>
+          <div className="profile-stat-item" style={{ cursor:'pointer' }} onClick={() => setFollowTab('followers')}>
+            <div className="profile-stat-num">{followers.length}</div><div className="profile-stat-lbl">{t.followers}</div>
+          </div>
+          <div className="profile-stat-item" style={{ cursor:'pointer' }} onClick={() => setFollowTab('following')}>
+            <div className="profile-stat-num">{following.length}</div><div className="profile-stat-lbl">{t.following}</div>
+          </div>
+          <div className="profile-stat-item">
+            <div className="profile-stat-num">{user.session_count||0}</div><div className="profile-stat-lbl">Sessions</div>
+          </div>
+          <div className="profile-stat-item">
+            <div className="profile-stat-num">{user.overall_accuracy||0}%</div><div className="profile-stat-lbl">Accuracy</div>
+          </div>
         </div>
         {(user.achievements||[]).length > 0 && (
           <div className="card">
@@ -1186,12 +1400,26 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
             </div>
           </div>
         )}
-        <div className="toggle-row">
-          <div><div className="toggle-label">{t.profilePrivacy}</div><div className="toggle-sub">{profilePrivate?t.private:t.public}</div></div>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={profilePrivate} onChange={e => setProfilePrivate(e.target.checked)} />
-            <span className="toggle-slider" />
-          </label>
+        <label className="section-label" style={{ marginTop:'6px' }}>Privacy & Display</label>
+        <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+            <input className="field" placeholder={t.displayNamePlaceholder} value={displayName} onChange={e => setDisplayName(e.target.value)} />
+            <p style={{ fontSize:'0.73rem', color:'var(--muted)' }}>{t.anonymousModeDesc}</p>
+          </div>
+          <div className="toggle-row">
+            <div><div className="toggle-label">{t.mutualOnly}</div><div className="toggle-sub">{t.mutualOnlyDesc}</div></div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={mutualOnly} onChange={e => setMutualOnly(e.target.checked)} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+          <div className="toggle-row">
+            <div><div className="toggle-label">{t.profilePrivacy}</div><div className="toggle-sub">{profilePrivate?t.private:t.public}</div></div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={profilePrivate} onChange={e => setProfilePrivate(e.target.checked)} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
         </div>
         <button className="btn-primary full" onClick={save}>{saved?'✅ Saved!':t.saveSettings}</button>
         {reviewEligible && <>

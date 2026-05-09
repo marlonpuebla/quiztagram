@@ -47,8 +47,9 @@ export async function getUserInviteCodes(username) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-export async function getTests() {
-  const data = await call('GET', '/api/tests')
+export async function getTests(search = '') {
+  const url = search ? `/api/tests?search=${encodeURIComponent(search)}` : '/api/tests'
+  const data = await call('GET', url)
   return data || []
 }
 
@@ -139,4 +140,49 @@ export async function getQuizResume(userId, testId) {
 
 export async function deleteQuizResume(userId, testId) {
   await call('DELETE', `/api/quiz-resume/${userId}/${testId}`)
+}
+
+// ── Follows ───────────────────────────────────────────────────────────────────
+
+export async function followUser(followerId, followerUsername, followingId) {
+  return call('POST', '/api/follows', { follower_id: followerId, follower_username: followerUsername, following_id: followingId })
+}
+
+export async function unfollowUser(followerId, followingId) {
+  return call('DELETE', `/api/follows/${followerId}/${followingId}`)
+}
+
+export async function checkFollow(followerId, followingId) {
+  const data = await call('GET', `/api/follows/check?followerId=${followerId}&followingId=${followingId}`)
+  return data?.following || false
+}
+
+export async function getFollowers(userId) {
+  const data = await call('GET', `/api/users/${userId}/followers`)
+  return data || []
+}
+
+export async function getFollowing(userId) {
+  const data = await call('GET', `/api/users/${userId}/following`)
+  return data || []
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export async function getNotifications(userId) {
+  const data = await call('GET', `/api/notifications?userId=${userId}`)
+  return data || []
+}
+
+export async function getUnreadNotificationCount(userId) {
+  const data = await call('GET', `/api/notifications/unread-count?userId=${userId}`)
+  return data?.count || 0
+}
+
+export async function markNotificationsRead(userId) {
+  return call('PUT', '/api/notifications/read', { userId })
+}
+
+export async function createNotification(notif) {
+  return call('POST', '/api/notifications', notif)
 }

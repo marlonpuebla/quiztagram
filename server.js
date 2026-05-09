@@ -60,7 +60,7 @@ app.get('/api/users', async (req, res) => {
 
 app.get('/api/users/public', async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, username, session_count, overall_accuracy, achievements FROM users WHERE profile_private = false ORDER BY overall_accuracy DESC'
+    'SELECT id, username, display_name, show_to_mutual_only, session_count, overall_accuracy, achievements FROM users WHERE profile_private = false ORDER BY overall_accuracy DESC'
   )
   res.json(rows)
 })
@@ -115,6 +115,14 @@ app.get('/api/tests', async (req, res) => {
     const { rows } = await pool.query(
       'SELECT * FROM tests WHERE created_by_id = $1 ORDER BY created_at DESC',
       [req.query.userId]
+    )
+    return res.json(rows)
+  }
+  if (req.query.search) {
+    const term = `%${req.query.search}%`
+    const { rows } = await pool.query(
+      'SELECT * FROM tests WHERE hidden = false AND (LOWER(name) LIKE LOWER($1) OR LOWER(created_by) LIKE LOWER($1)) ORDER BY created_at DESC',
+      [term]
     )
     return res.json(rows)
   }
@@ -223,6 +231,16 @@ app.post('/api/comments', async (req, res) => {
     'INSERT INTO comments (test_id, user_id, username, text) VALUES ($1, $2, $3, $4) RETURNING *',
     [test_id, user_id, username, text]
   )
+  try {
+    const { rows: testRows } = await pool.query('SELECT created_by_id, name FROM tests WHERE id = $1', [test_id])
+    if (testRows[0] && testRows[0].created_by_id && testRows[0].created_by_id !== user_id) {
+      await pool.query(
+        `INSERT INTO notifications (user_id, type, actor_id, actor_username, data, read)
+         VALUES ($1, 'new_comment', $2, $3, $4::jsonb, false)`,
+        [testRows[0].created_by_id, user_id, username, JSON.stringify({ test_id, test_name: testRows[0].name })]
+      )
+    }
+  } catch {}
   res.json(rows[0])
 })
 
@@ -276,6 +294,101 @@ app.delete('/api/quiz-resume/:userId/:testId', async (req, res) => {
     [req.params.userId, req.params.testId]
   )
   res.json({ ok: true })
+})
+
+// ── Follows ───────────────────────────────────────────────────────────────────
+
+app.post('/api/follows', async (req, res) => {
+  try {
+    const { follower_id, follower_username, following_id } = req.body
+    await pool.query(
+      'INSERT INTO follows (follower_id, following_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [follower_id, following_id]
+    )
+    await pool.query(
+      `INSERT INTO notifications (user_id, type, actor_id, actor_username, data, read)
+       VALUES ($1, 'new_follower', $2, $3, '{}', false)`,
+      [following_id, follower_id, follower_username]
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.delete('/api/follows/:followerId/:followingId', async (req, res) => {
+  await pool.query(
+    'DELETE FROM follows WHERE follower_id = $1 AND following_id = $2',
+    [req.params.followerId, req.params.followingId]
+  )
+  res.json({ ok: true })
+})
+
+app.get('/api/follows/check', async (req, res) => {
+  const { followerId, followingId } = req.query
+  const { rows } = await pool.query(
+    'SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2',
+    [followerId, followingId]
+  )
+  res.json({ following: rows.length > 0 })
+})
+
+app.get('/api/users/:id/followers', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.username, u.display_name, u.session_count, u.overall_accuracy
+     FROM follows f JOIN users u ON u.id = f.follower_id WHERE f.following_id = $1`,
+    [req.params.id]
+  )
+  res.json(rows)
+})
+
+app.get('/api/users/:id/following', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.username, u.display_name, u.session_count, u.overall_accuracy
+     FROM follows f JOIN users u ON u.id = f.following_id WHERE f.follower_id = $1`,
+    [req.params.id]
+  )
+  res.json(rows)
+})
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+app.get('/api/notifications', async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+    [req.query.userId]
+  )
+  res.json(rows)
+})
+
+app.get('/api/notifications/unread-count', async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read = false',
+    [req.query.userId]
+  )
+  res.json({ count: parseInt(rows[0].count) })
+})
+
+app.put('/api/notifications/read', async (req, res) => {
+  await pool.query(
+    'UPDATE notifications SET read = true WHERE user_id = $1',
+    [req.body.userId]
+  )
+  res.json({ ok: true })
+})
+
+app.post('/api/notifications', async (req, res) => {
+  try {
+    const { user_id, type, actor_id, actor_username, data } = req.body
+    const { rows } = await pool.query(
+      `INSERT INTO notifications (user_id, type, actor_id, actor_username, data, read)
+       VALUES ($1, $2, $3, $4, $5::jsonb, false) RETURNING *`,
+      [user_id, type, actor_id, actor_username, JSON.stringify(data || {})]
+    )
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── AI Validate ───────────────────────────────────────────────────────────────

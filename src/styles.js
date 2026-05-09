@@ -37,7 +37,7 @@ export const STYLES = `
 html, body, #root { height: 100%; }
 body { font-family: var(--font-body); background: var(--navy); color: var(--white); overflow-x: hidden; -webkit-font-smoothing: antialiased; }
 
-.app { min-height: 100vh; max-width: 480px; margin: 0 auto; position: relative; }
+.app { min-height: 100vh; position: relative; }
 
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -315,6 +315,56 @@ input:checked + .toggle-slider:before { transform:translateX(21px); }
 .toast-title { font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; opacity:0.85; }
 .toast-name { font-size:0.98rem; font-weight:800; }
 .toast-desc { font-size:0.8rem; opacity:0.85; margin-top:1px; }
+
+/* ── Search Bar ── */
+.search-bar-wrap { padding:8px 16px 4px; }
+.search-bar { width:100%; background:var(--navy2); border:1px solid var(--border); color:var(--white); padding:10px 14px 10px 38px; border-radius:var(--radius-sm); font-family:var(--font-body); font-size:0.88rem; outline:none; transition:var(--trans); }
+.search-bar:focus { border-color:var(--muted); }
+.search-bar-inner { position:relative; }
+.search-bar-icon { position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--muted); }
+
+/* ── Follow Button ── */
+.follow-btn { font-family:var(--font-body); font-size:0.8rem; font-weight:700; padding:6px 14px; border-radius:var(--radius-sm); border:none; cursor:pointer; transition:var(--trans); flex-shrink:0; }
+.follow-btn.following { background:var(--navy2); color:var(--white); border:1.5px solid var(--border); }
+.follow-btn.not-following { background:var(--ig-blue); color:#fff; }
+.follow-btn.not-following:hover { filter:brightness(1.1); }
+
+/* ── Notification Badge ── */
+.notif-badge { background:var(--danger); color:#fff; border-radius:10px; font-size:0.65rem; font-weight:700; padding:2px 5px; min-width:16px; text-align:center; line-height:1.4; }
+.nav-notif-wrap { position:relative; display:flex; align-items:center; justify-content:center; }
+.nav-notif-dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:var(--danger); border-radius:50%; border:1.5px solid var(--navy); }
+
+/* ── Notifications Screen ── */
+.notif-list { padding:0 16px; display:flex; flex-direction:column; }
+.notif-row { display:flex; align-items:flex-start; gap:12px; padding:14px 0; border-bottom:1px solid var(--border); }
+.notif-row:last-child { border-bottom:none; }
+.notif-row.unread { background:rgba(0,149,246,0.04); margin:0 -16px; padding:14px 16px; }
+.notif-avatar { width:38px; height:38px; border-radius:50%; background:var(--ig-gradient); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:0.9rem; flex-shrink:0; }
+.notif-body { flex:1; min-width:0; }
+.notif-text { font-size:0.88rem; line-height:1.4; }
+.notif-text strong { color:var(--ig-blue); }
+.notif-time { font-size:0.72rem; color:var(--muted); margin-top:3px; }
+.notif-unread-dot { width:8px; height:8px; border-radius:50%; background:var(--ig-blue); flex-shrink:0; margin-top:6px; }
+
+/* ── Desktop Sidebar ── */
+.sidebar { display:none; }
+@media (min-width: 768px) {
+  .app { display:flex; min-height:100vh; }
+  .sidebar { display:flex; flex-direction:column; position:fixed; left:0; top:0; bottom:0; width:240px; background:var(--navy); border-right:1px solid var(--border); z-index:100; padding:16px 0; }
+  .sidebar-logo { padding:8px 20px 20px; }
+  .sidebar-nav { flex:1; display:flex; flex-direction:column; gap:2px; padding:0 10px; }
+  .sidebar-item { display:flex; align-items:center; gap:14px; padding:12px 12px; border-radius:var(--radius-sm); border:none; background:transparent; color:var(--muted); font-family:var(--font-body); font-size:0.93rem; cursor:pointer; transition:var(--trans); text-align:left; width:100%; position:relative; }
+  .sidebar-item:hover { background:var(--navy2); color:var(--white); }
+  .sidebar-item.active { color:var(--white); font-weight:600; }
+  .sidebar-item .notif-badge { margin-left:auto; }
+  .sidebar-footer { padding:10px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:2px; }
+  .main-content { margin-left:240px; flex:1; max-width:640px; }
+  .bottom-nav { display:none !important; }
+  .screen { padding-bottom:20px; }
+}
+@media (max-width: 767px) {
+  .main-content { max-width:480px; margin:0 auto; }
+}
 
 /* ── Misc ── */
 .divider { height:1px; background:var(--border); margin:4px 0; }
