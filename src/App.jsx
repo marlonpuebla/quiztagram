@@ -307,6 +307,16 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin, navigate
     return () => window.removeEventListener('resize', handler)
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('invite')
+    if (code) {
+      setInvite(code.toUpperCase())
+      setMode('register')
+      window.history.replaceState({}, '', '/')
+    }
+  }, [])
+
   const handle = async () => {
     setErr('')
     if (!username.trim()) return setErr(t.enterUsername)
@@ -396,7 +406,6 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin, navigate
                 </button>
               )}
             </div>
-            {mode === 'register' && <p className="auth-hint">First invite code: <strong>NURSE2026</strong></p>}
             <div className="auth-legal">
               By using Quiztagram you agree to our{' '}
               <button onClick={() => navigate('tos')}>Terms of Service</button>
@@ -1002,7 +1011,10 @@ function LeaderboardScreen({ user, t, topBar, navigate }) {
           {displayRows.map((u,i) => (
             <div key={u.id} className="lb-row">
               <span className={`lb-rank ${medal(i)}`}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</span>
-              <span className="lb-name">{displayName(u)}{reviewerIds.has(u.id)&&<span className="reviewer-badge">⭐ Reviewer</span>}</span>
+              <div className="lb-name">
+                <div>{displayName(u)}</div>
+                {reviewerIds.has(u.id) && <span className="reviewer-badge">⭐ Reviewer</span>}
+              </div>
               <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
                 <div style={{ textAlign:'right' }}>
                   <div className="lb-acc">{u.overall_accuracy||0}%</div>
@@ -1197,6 +1209,7 @@ function TestDetailScreen({ user, t, lang, data, navigate, doUpdateUser, checkAc
               {test.semester && <span className="meta-tag">{test.semester}</span>}
             </div>
           )}
+          {test.ai_imported && <div className="ai-import-badge" style={{ marginTop:'10px' }}>✦ AI-Generated — verify accuracy</div>}
           {test.flagged && !test.reviewed && <div className="flagged-badge" style={{ marginTop:'10px' }}>{t.flagged}</div>}
           {test.reviewed && <div className="reviewed-badge" style={{ marginTop:'10px' }}>{t.reviewed}</div>}
         </div>
@@ -1280,8 +1293,11 @@ function TestDetailScreen({ user, t, lang, data, navigate, doUpdateUser, checkAc
 
 // ─── ADD TEST ─────────────────────────────────────────────────────────────────
 function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievements, topBar }) {
+  const [mode, setMode]   = useState('json') // 'json' | 'artifact'
   const [name, setName]   = useState('')
   const [json, setJson]   = useState('')
+  const [artifactCode, setArtifactCode] = useState('')
+  const [copyrightOk, setCopyrightOk]   = useState(false)
   const [err, setErr]     = useState('')
   const [loading, setLoading] = useState(false)
   const [tags, setTags]   = useState([])
@@ -1344,71 +1360,144 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
     setLoading(false)
   }
 
+  const handleImportArtifact = async () => {
+    if (!name.trim()) return setErr('Enter a test name.')
+    if (!artifactCode.trim()) return setErr('Paste your AI artifact code first.')
+    if (!copyrightOk) return setErr('Please confirm you have the right to share this content.')
+    setLoading(true); setErr('')
+    try {
+      const res = await fetch('/api/tests/import-artifact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artifactCode, name: name.trim(),
+          created_by: user.username, created_by_id: user.id,
+          college: metaCollege.trim() || null,
+          program: metaProgram.trim() || null,
+          semester: metaSemester || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErr(data.error || 'Import failed. Try again.'); setLoading(false); return }
+      const upd = await doUpdateUser({ upload_count: (user.upload_count||0) + 1 })
+      await checkAchievements(upd)
+      navigate('home')
+    } catch { setErr('Network error. Check your connection.') }
+    setLoading(false)
+  }
+
   const [collegeSuggs, setCollegeSuggs] = useState([])
   const [programSuggs, setProgramSuggs] = useState([])
   useEffect(() => { getAcademicSuggestions().then(s => { setCollegeSuggs(s.colleges); setProgramSuggs(s.programs) }) }, [])
+
+  const originStep = (stepNum) => (
+    <div className="add-test-step">
+      <div className="add-test-step-label">Step {stepNum} — {t.testOrigin}</div>
+      {!profileFilled && <p style={{ fontSize:'0.8rem', color:'var(--muted)' }}>{t.testOriginNote}</p>}
+      <input className="field" list="at-college-suggs" placeholder={t.collegePlaceholder} value={metaCollege} onChange={e => setMetaCollege(e.target.value)} />
+      <datalist id="at-college-suggs">{collegeSuggs.map(c => <option key={c} value={c} />)}</datalist>
+      <input className="field" list="at-program-suggs" placeholder={t.programPlaceholder} value={metaProgram} onChange={e => setMetaProgram(e.target.value)} />
+      <datalist id="at-program-suggs">{programSuggs.map(p => <option key={p} value={p} />)}</datalist>
+      <select className="select" value={metaSemester} onChange={e => setMetaSemester(e.target.value)}>
+        <option value="">{t.semesterLabel}…</option>
+        {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+    </div>
+  )
 
   return (
     <div className="screen">{topBar(t.addTest, 'home')}
       <div className="add-test-form">
 
-        {/* Step 1 — AI Guide */}
-        <div className="add-test-step">
-          <div className="add-test-step-label">Step 1 — Generate with AI</div>
-          <p style={{ fontSize:'0.84rem', color:'var(--muted)', lineHeight:1.55 }}>
-            Use any AI assistant (Claude, ChatGPT, Gemini) to convert your exam photos or notes into a Quiztagram JSON file.
-          </p>
-          <button className="btn-ghost" style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'0.85rem' }} onClick={() => navigate('guide')}>
-            <Icon name="camera" size={16} /> {t.createGuide}
-          </button>
+        {/* Mode toggle */}
+        <div className="tab-row" style={{ marginBottom:'4px' }}>
+          <button className={`tab${mode==='json'?' active':''}`} onClick={() => { setMode('json'); setErr('') }}>JSON Upload</button>
+          <button className={`tab${mode==='artifact'?' active':''}`} onClick={() => { setMode('artifact'); setErr('') }}>✦ Import AI Artifact</button>
         </div>
 
-        {/* Step 2 — Test Details */}
-        <div className="add-test-step">
-          <div className="add-test-step-label">Step 2 — {t.testDetails}</div>
-          <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
-        </div>
-
-        {/* Step 3 — Upload Content */}
-        <div className="add-test-step">
-          <div className="add-test-step-label">Step 3 — {t.uploadContent}</div>
-          <textarea className="textarea" placeholder={t.pasteJSON} value={json} onChange={e => setJson(e.target.value)} rows={7} />
-          <div className="or-divider">or</div>
-          <label className="btn-ghost" style={{ cursor:'pointer', fontSize:'0.84rem', display:'inline-flex', alignItems:'center', gap:'8px', alignSelf:'flex-start' }}>
-            <Icon name="upload" size={16} /> {t.uploadJSON}
-            <input type="file" accept=".json,application/json" onChange={handleFileUpload} style={{ display:'none' }} />
-          </label>
-        </div>
-
-        {/* Step 4 — Test Origin */}
-        <div className="add-test-step">
-          <div className="add-test-step-label">Step 4 — {t.testOrigin}</div>
-          {!profileFilled && <p style={{ fontSize:'0.8rem', color:'var(--muted)' }}>{t.testOriginNote}</p>}
-          <input className="field" list="at-college-suggs" placeholder={t.collegePlaceholder} value={metaCollege} onChange={e => setMetaCollege(e.target.value)} />
-          <datalist id="at-college-suggs">{collegeSuggs.map(c => <option key={c} value={c} />)}</datalist>
-          <input className="field" list="at-program-suggs" placeholder={t.programPlaceholder} value={metaProgram} onChange={e => setMetaProgram(e.target.value)} />
-          <datalist id="at-program-suggs">{programSuggs.map(p => <option key={p} value={p} />)}</datalist>
-          <select className="select" value={metaSemester} onChange={e => setMetaSemester(e.target.value)}>
-            <option value="">{t.semesterLabel}…</option>
-            {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        {/* AI Tags (post-validation) */}
-        {tags.length > 0 && (
-          <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', padding:'4px 0' }}>
-            <span style={{ fontSize:'0.7rem', color:'var(--muted)', alignSelf:'center' }}>AI Topics:</span>
-            {tags.map(tg => <span key={tg} className="tag tag-topic">{tg}</span>)}
+        {mode === 'json' && <>
+          {/* Step 1 — AI Guide */}
+          <div className="add-test-step">
+            <div className="add-test-step-label">Step 1 — Generate with AI</div>
+            <p style={{ fontSize:'0.84rem', color:'var(--muted)', lineHeight:1.55 }}>
+              Use any AI assistant (Claude, ChatGPT, Gemini) to convert your exam photos or notes into a Quiztagram JSON file.
+            </p>
+            <button className="btn-ghost" style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'0.85rem' }} onClick={() => navigate('guide')}>
+              <Icon name="camera" size={16} /> {t.createGuide}
+            </button>
           </div>
-        )}
 
-        <div className="legal-disclaimer">
-          Only upload content you created or have rights to share. Do not upload copyrighted exam questions from commercial sources (NCLEX, ATI, HESI, Kaplan, UWorld, etc.). Violations may result in content removal and account termination.
-        </div>
-        {err && <p className="field-err">{err}</p>}
-        <button className="btn-primary full" onClick={handleAdd} disabled={loading}>
-          {loading ? <><span className="spinner" /> {t.tagsLoading}</> : t.addTestBtn}
-        </button>
+          {/* Step 2 — Test Details */}
+          <div className="add-test-step">
+            <div className="add-test-step-label">Step 2 — {t.testDetails}</div>
+            <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
+          </div>
+
+          {/* Step 3 — Upload Content */}
+          <div className="add-test-step">
+            <div className="add-test-step-label">Step 3 — {t.uploadContent}</div>
+            <textarea className="textarea" placeholder={t.pasteJSON} value={json} onChange={e => setJson(e.target.value)} rows={7} />
+            <div className="or-divider">or</div>
+            <label className="btn-ghost" style={{ cursor:'pointer', fontSize:'0.84rem', display:'inline-flex', alignItems:'center', gap:'8px', alignSelf:'flex-start' }}>
+              <Icon name="upload" size={16} /> {t.uploadJSON}
+              <input type="file" accept=".json,application/json" onChange={handleFileUpload} style={{ display:'none' }} />
+            </label>
+          </div>
+
+          {originStep(4)}
+
+          {tags.length > 0 && (
+            <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', padding:'4px 0' }}>
+              <span style={{ fontSize:'0.7rem', color:'var(--muted)', alignSelf:'center' }}>AI Topics:</span>
+              {tags.map(tg => <span key={tg} className="tag tag-topic">{tg}</span>)}
+            </div>
+          )}
+
+          <div className="legal-disclaimer">
+            Only upload content you created or have rights to share. Do not upload copyrighted exam questions from commercial sources (NCLEX, ATI, HESI, Kaplan, UWorld, etc.). Violations may result in content removal and account termination.
+          </div>
+          {err && <p className="field-err">{err}</p>}
+          <button className="btn-primary full" onClick={handleAdd} disabled={loading}>
+            {loading ? <><span className="spinner" /> {t.tagsLoading}</> : t.addTestBtn}
+          </button>
+        </>}
+
+        {mode === 'artifact' && <>
+          {/* Step 1 — Test Name */}
+          <div className="add-test-step">
+            <div className="add-test-step-label">Step 1 — {t.testDetails}</div>
+            <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
+          </div>
+
+          {/* Step 2 — Paste Artifact */}
+          <div className="add-test-step">
+            <div className="add-test-step-label">Step 2 — Paste AI Artifact Code</div>
+            <p style={{ fontSize:'0.82rem', color:'var(--muted)', lineHeight:1.55 }}>
+              Copy the full artifact/canvas code generated by Claude, ChatGPT, or Gemini and paste it below. Claude will extract the questions automatically.
+            </p>
+            <textarea className="textarea" placeholder="Paste HTML, React, or JavaScript artifact code here…" value={artifactCode} onChange={e => setArtifactCode(e.target.value)} rows={9} style={{ fontFamily:'monospace', fontSize:'0.78rem' }} />
+          </div>
+
+          {originStep(3)}
+
+          {/* Legal safeguards */}
+          <div className="add-test-step">
+            <div className="add-test-step-label">Step 4 — Confirm & Legal</div>
+            <div className="alert alert-warn" style={{ fontSize:'0.8rem', lineHeight:1.6 }}>
+              <strong>AI-Generated Content Warning:</strong> Questions extracted from AI artifacts may contain clinical errors, hallucinations, or inaccuracies. Always verify medical information against authoritative sources before studying or sharing. Quiztagram is not responsible for errors in AI-generated content.
+            </div>
+            <label style={{ display:'flex', alignItems:'flex-start', gap:'10px', fontSize:'0.83rem', color:'var(--muted)', cursor:'pointer', marginTop:'8px' }}>
+              <input type="checkbox" checked={copyrightOk} onChange={e => setCopyrightOk(e.target.checked)} style={{ marginTop:'2px', flexShrink:0 }} />
+              I confirm that I have the right to share this content and that it does not reproduce verbatim copyrighted material from commercial sources (NCLEX, ATI, HESI, Kaplan, UWorld, textbooks, etc.).
+            </label>
+          </div>
+
+          {err && <p className="field-err">{err}</p>}
+          <button className="btn-primary full" onClick={handleImportArtifact} disabled={loading}>
+            {loading ? <><span className="spinner" /> Extracting questions…</> : '✦ Import Artifact'}
+          </button>
+        </>}
+
         <button className="btn-ghost" onClick={() => navigate('home')}>{t.cancel}</button>
       </div>
     </div>
@@ -1450,14 +1539,19 @@ function GuideScreen({ t, navigate, topBar }) {
 
 // ─── INVITES ─────────────────────────────────────────────────────────────────
 function InvitesScreen({ user, t, topBar }) {
-  const [codes, setCodes]   = useState([])
-  const [copied, setCopied] = useState(null)
+  const [codes, setCodes]       = useState([])
+  const [copied, setCopied]     = useState(null)
+  const [copiedLink, setCopiedLink] = useState(null)
   useEffect(() => { getUserInviteCodes(user.username).then(setCodes) }, [])
   const generate = async () => {
     const c = await generateInviteCode(user.username)
     if (c) setCodes(cs => [c, ...cs])
   }
   const copy = async code => { try { await navigator.clipboard.writeText(code); setCopied(code); setTimeout(()=>setCopied(null),2000) } catch {} }
+  const shareLink = async code => {
+    const url = `${window.location.origin}?invite=${code}`
+    try { await navigator.clipboard.writeText(url); setCopiedLink(code); setTimeout(()=>setCopiedLink(null),2000) } catch {}
+  }
   return (
     <div className="screen">{topBar(t.inviteFriends, 'home')}
       <div className="invites-content">
@@ -1467,7 +1561,10 @@ function InvitesScreen({ user, t, topBar }) {
         {codes.map(c => (
           <div key={c.id} className="code-row">
             <div><div className="code-val">{c.code}</div><div className="code-status">{c.used?t.used:t.unused}</div></div>
-            {!c.used && <button className="btn-primary sm" onClick={() => copy(c.code)}>{copied===c.code?t.copied:t.copy}</button>}
+            {!c.used && <div style={{ display:'flex', gap:'6px' }}>
+              <button className="btn-ghost sm" onClick={() => copy(c.code)}>{copied===c.code?t.copied:t.copy}</button>
+              <button className="btn-primary sm" onClick={() => shareLink(c.code)}>{copiedLink===c.code?t.copied:'🔗 Link'}</button>
+            </div>}
           </div>
         ))}
       </div>
@@ -1655,7 +1752,7 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
     <div className="screen">
       <div className="top-bar">
         <span className="logo-sm">Quiztagram</span>
-        <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{user.username}</span>
+        <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{t.profile}</span>
       </div>
 
       {/* ── Profile Header ── */}
@@ -1931,7 +2028,17 @@ function TosScreen({ user, navigate }) {
           </ul>
           Quiztagram is not responsible for any academic, professional, or legal consequences arising from your use of this platform.
         </S>
-        <S title="5. Academic Profile & Privacy Controls">
+        <S title="5. AI Artifact Import">
+          Quiztagram allows users to import quiz content from AI-generated artifacts created by third-party AI systems (including but not limited to Claude, ChatGPT, and Gemini). By using the AI Artifact Import feature, you acknowledge and agree that:
+          <ul>
+            <li>You are solely responsible for ensuring the imported content does not infringe any copyright or other intellectual property right. Quiztagram uses the Anthropic Claude API to parse and convert artifact code into quiz questions — this processing does not transfer ownership or grant any license to underlying third-party content.</li>
+            <li><strong>AI-generated content may contain clinical errors, hallucinations, or inaccurate medical information.</strong> All imported content is automatically labeled "AI-Generated" on the platform. You must independently verify the accuracy of all medical and clinical information before studying or sharing it.</li>
+            <li>You must confirm before import that you have the rights to share the artifact content. Making a false confirmation constitutes a violation of these Terms and may result in account termination.</li>
+            <li>Quiztagram disclaims all liability for harm arising from reliance on inaccurate AI-generated quiz content, including but not limited to academic harm, clinical harm, or licensure consequences.</li>
+            <li>Imported tests are subject to the same community content moderation, flagging, and DMCA takedown processes as all other user-uploaded content (see Sections 4 and 8).</li>
+          </ul>
+        </S>
+        <S title="6. Academic Profile & Privacy Controls">
           Quiztagram allows you to optionally share academic information — including college, program, semester, current classes, and professor. You control who sees this data through your profile privacy settings:
           <ul>
             <li><strong>Private:</strong> Only you can see your academic info.</li>
@@ -1940,13 +2047,13 @@ function TosScreen({ user, navigate }) {
           </ul>
           Your <strong>professor field is always private</strong> regardless of your privacy setting — it is never displayed to other users. Test metadata (college, program, semester attached to an uploaded test) is always public to support search and discovery. All academic fields are optional. You can change or remove them at any time from your profile.
         </S>
-        <S title="6. Exam Verification Feature">
+        <S title="7. Exam Verification Feature">
           Quiztagram allows you to verify whether a practice test matched your real classroom exam and report whether you passed. To submit a verification, your academic profile (college, program, semester) must be complete. Verifications are used to display aggregate statistics (e.g., pass rate, verified count) on test cards. Your individual result may be visible to others depending on your profile privacy settings. You may update your verification at any time.
         </S>
-        <S title="7. Social Features">
+        <S title="8. Social Features">
           Quiztagram includes social features — following other users, commenting on tests, and receiving notifications. You agree not to use these features to harass, threaten, impersonate, or spam other users. We reserve the right to remove content and ban accounts that abuse social features.
         </S>
-        <S title="8. Copyright & DMCA Takedowns">
+        <S title="9. Copyright & DMCA Takedowns">
           Quiztagram respects intellectual property rights and will respond to valid notices under the Digital Millennium Copyright Act (DMCA). To submit a takedown request, email <strong className="legal-email">legal@quiztagram.com</strong> with:
           <ul>
             <li>Identification of the copyrighted work claimed to be infringed.</li>
@@ -1958,7 +2065,7 @@ function TosScreen({ user, navigate }) {
           </ul>
           We will process valid notices promptly. Repeat infringers will have their accounts permanently terminated. Counter-notices may be submitted to the same address.
         </S>
-        <S title="9. Prohibited Conduct">
+        <S title="10. Prohibited Conduct">
           You may not:
           <ul>
             <li>Attempt to reverse-engineer, scrape, or automate access to Quiztagram.</li>
@@ -1968,22 +2075,22 @@ function TosScreen({ user, navigate }) {
             <li>Impersonate any person or entity, or misrepresent your affiliation.</li>
           </ul>
         </S>
-        <S title="10. Disclaimer of Warranties">
+        <S title="11. Disclaimer of Warranties">
           Quiztagram is provided <strong>"as is"</strong> and <strong>"as available"</strong> without warranties of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. We do not warrant that the platform will be uninterrupted, error-free, or that any content is accurate, current, or complete. Quiztagram is not affiliated with, endorsed by, or connected to NCLEX, ATI, HESI, Kaplan, UWorld, or any educational institution.
         </S>
-        <S title="11. Limitation of Liability">
+        <S title="12. Limitation of Liability">
           To the fullest extent permitted by applicable law, Quiztagram and its operators, employees, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive damages — including but not limited to loss of data, loss of academic standing, loss of licensure opportunity, or loss of revenue — arising out of or in connection with your use of, or inability to use, this platform, even if we have been advised of the possibility of such damages.
         </S>
-        <S title="12. Account Suspension & Termination">
+        <S title="13. Account Suspension & Termination">
           We reserve the right to suspend or permanently terminate any account at our discretion, including for violation of these Terms, uploading infringing content, abusive behavior, or creation of multiple accounts to circumvent restrictions. We will generally attempt to provide notice, but are not required to do so where security or legal considerations apply. You may request account deletion by contacting <strong className="legal-email">legal@quiztagram.com</strong>.
         </S>
-        <S title="13. Changes to These Terms">
+        <S title="14. Changes to These Terms">
           We may update these Terms at any time. When we make material changes, we will update the effective date at the top of this page and, where feasible, notify users within the app. Your continued use of Quiztagram after changes are posted constitutes your acceptance of the revised Terms.
         </S>
-        <S title="14. Governing Law">
+        <S title="15. Governing Law">
           These Terms are governed by and construed in accordance with the laws of the jurisdiction in which Quiztagram operates, without regard to conflict-of-law principles. Any dispute arising under these Terms shall be resolved in the competent courts of that jurisdiction.
         </S>
-        <S title="15. Contact">
+        <S title="16. Contact">
           For legal matters, DMCA requests, account deletion, or any Terms-related questions:{' '}
           <strong className="legal-email">legal@quiztagram.com</strong>
         </S>

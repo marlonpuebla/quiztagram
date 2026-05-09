@@ -212,7 +212,7 @@ body { font-family: var(--font-body); background: var(--navy); color: var(--whit
 .lb-rank.gold   { color:#FFD700; }
 .lb-rank.silver { color:#C0C0C0; }
 .lb-rank.bronze { color:#CD7F32; }
-.lb-name { flex:1; font-weight:500; font-size:0.92rem; }
+.lb-name { flex:1; font-weight:500; font-size:0.92rem; display:flex; flex-direction:column; gap:3px; }
 .lb-acc { font-weight:700; color:var(--ig-blue); font-size:0.9rem; }
 .lb-sessions { font-size:0.74rem; color:var(--muted); }
 .reviewer-badge { font-size:0.66rem; background:var(--gold); color:#000; padding:2px 7px; border-radius:10px; font-weight:700; margin-left:5px; }
@@ -242,8 +242,9 @@ body { font-family: var(--font-body); background: var(--navy); color: var(--whit
 .comment-author { font-size:0.75rem; color:var(--ig-blue); font-weight:600; margin-bottom:2px; }
 .comment-text { font-size:0.86rem; }
 .comment-date { font-size:0.7rem; color:var(--muted); margin-top:2px; }
-.flagged-badge  { background:rgba(237,73,86,0.08);  border:1px solid rgba(237,73,86,0.3);  color:var(--danger); padding:6px 12px; border-radius:8px; font-size:0.78rem; font-weight:600; text-align:center; }
-.reviewed-badge { background:rgba(6,214,160,0.08);  border:1px solid rgba(6,214,160,0.3);  color:var(--success);padding:6px 12px; border-radius:8px; font-size:0.78rem; font-weight:600; text-align:center; }
+.flagged-badge    { background:rgba(237,73,86,0.08);  border:1px solid rgba(237,73,86,0.3);  color:var(--danger); padding:6px 12px; border-radius:8px; font-size:0.78rem; font-weight:600; text-align:center; }
+.reviewed-badge   { background:rgba(6,214,160,0.08);  border:1px solid rgba(6,214,160,0.3);  color:var(--success);padding:6px 12px; border-radius:8px; font-size:0.78rem; font-weight:600; text-align:center; }
+.ai-import-badge  { background:rgba(0,149,246,0.08);  border:1px solid rgba(0,149,246,0.25); color:var(--ig-blue); padding:6px 12px; border-radius:8px; font-size:0.78rem; font-weight:600; text-align:center; }
 
 /* ── Add Test ── */
 .add-test-form { padding:0 16px; display:flex; flex-direction:column; gap:12px; }
@@ -464,8 +465,8 @@ input:checked + .toggle-slider:before { transform:translateX(21px); }
 .class-sched-prof { font-size:0.75rem; color:var(--muted); margin-top:1px; }
 .class-sched-remove { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:1.1rem; padding:0; line-height:1; flex-shrink:0; }
 .class-sched-remove:hover { color:var(--coral); }
-.class-sched-add { display:flex; gap:7px; align-items:flex-end; }
-.class-sched-add .field-sm { flex:1; background:var(--navy2); border:1px solid var(--border); color:var(--white); padding:10px 12px; border-radius:var(--radius-sm); font-family:var(--font-body); font-size:0.88rem; outline:none; transition:var(--trans); }
+.class-sched-add { display:flex; flex-direction:column; gap:7px; }
+.class-sched-add .field-sm { width:100%; box-sizing:border-box; background:var(--navy2); border:1px solid var(--border); color:var(--white); padding:10px 12px; border-radius:var(--radius-sm); font-family:var(--font-body); font-size:0.88rem; outline:none; transition:var(--trans); }
 .class-sched-add .field-sm:focus { border-color:var(--muted); }
 
 /* ── Avatar Emoji Picker ── */

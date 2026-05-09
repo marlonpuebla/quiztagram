@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import pg from 'pg'
 import cors from 'cors'
@@ -559,6 +560,49 @@ Return ONLY JSON.` }],
     })
     const data = await response.json()
     res.status(response.status).json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── AI Artifact Import ────────────────────────────────────────────────────────
+
+app.post('/api/tests/import-artifact', async (req, res) => {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' })
+  const { artifactCode, name, created_by, created_by_id, college, program, semester } = req.body
+  if (!artifactCode?.trim()) return res.status(400).json({ error: 'No artifact provided' })
+  if (!name?.trim()) return res.status(400).json({ error: 'Test name required' })
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514', max_tokens: 4000,
+        messages: [{ role: 'user', content: `Extract all quiz questions from this AI-generated artifact and convert them to this exact JSON array. Return ONLY the JSON array, no markdown fences, no explanation.
+
+Each item must follow this schema:
+{"id":"q1","question":"full question text","type":"multiple_choice","options":["A. ...","B. ...","C. ...","D. ..."],"answer":{"en":"A. exact option text"},"explanation":"why correct","topic":"nursing topic","difficulty":"easy|medium|hard"}
+
+For true/false use type "multiple_choice" with options ["A. True","B. False"].
+For open-ended use type "fill" with no options and answer:{"en":"expected answer"}.
+The answer.en value must exactly match one of the options strings (case-sensitive).
+
+Artifact:
+${artifactCode.slice(0, 18000)}` }],
+      }),
+    })
+    const ai = await response.json()
+    const text = ai.content?.find(c => c.type === 'text')?.text || ''
+    let questions
+    try { questions = JSON.parse(text.replace(/```json|```/g, '').trim()) } catch { return res.status(400).json({ error: 'Could not parse questions from artifact. Make sure you pasted the full artifact code.' }) }
+    if (!Array.isArray(questions) || !questions.length) return res.status(400).json({ error: 'No questions found in artifact.' })
+    const { rows } = await pool.query(
+      `INSERT INTO tests (name, questions, created_by, created_by_id, thumbs_up, thumbs_down, hidden, college, program, semester, ai_imported)
+       VALUES ($1, $2, $3, $4, 0, 0, false, $5, $6, $7, true) RETURNING *`,
+      [name.trim(), JSON.stringify(questions), created_by, created_by_id, college || null, program || null, semester || null]
+    )
+    res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
