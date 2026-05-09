@@ -60,13 +60,6 @@ export default function App() {
   const login = u => { localStorage.setItem('np_user', JSON.stringify(u)); setUser(u); setScreen('home') }
   const logout = () => { localStorage.removeItem('np_user'); setUser(null); setScreen('auth') }
 
-  const refreshUser = async () => {
-    if (!user) return
-    const { data } = await import('./supabase').then(m => m.supabase.from('users').select('*').eq('id', user.id).single())
-    if (data) { setUser(data); localStorage.setItem('np_user', JSON.stringify(data)) }
-    return data
-  }
-
   const doUpdateUser = async updates => {
     const saved = await updateUser(user.id, updates)
     if (saved) { setUser(saved); localStorage.setItem('np_user', JSON.stringify(saved)) }
