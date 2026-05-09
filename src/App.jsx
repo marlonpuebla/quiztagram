@@ -898,28 +898,18 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
 
     // AI validation + tag suggestion
     try {
-      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-      if (apiKey) {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514', max_tokens: 800,
-            messages: [{ role:'user', content: `Validate and tag these nursing exam questions.
-1. If NOT legitimate nursing/medical content, return: {"valid":false,"reason":"explanation"}
-2. If valid return: {"valid":true,"topics":["tag1","tag2"],"difficulties":{"questionId":"easy|medium|hard"}}
-Questions: ${JSON.stringify(parsed.slice(0,5))}
-Return ONLY JSON.` }]
-          })
-        })
-        const ai = await res.json()
-        const aiText = ai.content?.find(c=>c.type==='text')?.text || ''
-        const aiResult = JSON.parse(aiText.replace(/```json|```/g,'').trim())
-        if (!aiResult.valid) { setErr('⚠️ ' + (aiResult.reason||'Content validation failed.')); setLoading(false); return }
-        setTags(aiResult.topics || [])
-        if (aiResult.difficulties) {
-          parsed = parsed.map(q => ({ ...q, difficulty: aiResult.difficulties[q.id] || q.difficulty || 'medium' }))
-        }
+      const res = await fetch('/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions: parsed.slice(0, 5) }),
+      })
+      const ai = await res.json()
+      const aiText = ai.content?.find(c => c.type === 'text')?.text || ''
+      const aiResult = JSON.parse(aiText.replace(/```json|```/g, '').trim())
+      if (!aiResult.valid) { setErr('⚠️ ' + (aiResult.reason || 'Content validation failed.')); setLoading(false); return }
+      setTags(aiResult.topics || [])
+      if (aiResult.difficulties) {
+        parsed = parsed.map(q => ({ ...q, difficulty: aiResult.difficulties[q.id] || q.difficulty || 'medium' }))
       }
     } catch { /* proceed anyway if AI fails */ }
 
