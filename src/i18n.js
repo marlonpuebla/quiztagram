@@ -1,6 +1,6 @@
 export const T = {
   en: {
-    appName: "NursePrep", tagline: "Study smarter. Score higher.",
+    appName: "Quiztagram", tagline: "Study smarter. Score higher.",
     signIn: "Sign In", register: "Register", username: "Username", password: "Password",
     inviteCode: "Invite Code", createAccount: "Create Account", logout: "Log Out",
     usernameNotFound: "Username not found.", wrongPassword: "Incorrect password.",
@@ -55,7 +55,7 @@ export const T = {
     guideStep3: "3. Upload your images and paste the prompt below:",
     guideStep4: "4. Copy the JSON Claude returns.",
     guideStep5: "5. Come back here → Add Test → paste the JSON.",
-    guidePrompt: `You are helping prepare study material for NursePrep, a nursing exam study app.
+    guidePrompt: `You are helping prepare study material for Quiztagram, a nursing exam study app.
 
 Analyze the uploaded test image(s) and extract ALL questions.
 
@@ -92,7 +92,7 @@ Rules:
     setupMsg: "Add your Supabase credentials to .env to connect the database.",
   },
   es: {
-    appName: "NursePrep", tagline: "Estudia mejor. Puntúa más alto.",
+    appName: "Quiztagram", tagline: "Estudia mejor. Puntúa más alto.",
     signIn: "Iniciar Sesión", register: "Registrarse", username: "Usuario", password: "Contraseña",
     inviteCode: "Código de Invitación", createAccount: "Crear Cuenta", logout: "Salir",
     usernameNotFound: "Usuario no encontrado.", wrongPassword: "Contraseña incorrecta.",
@@ -147,7 +147,7 @@ Rules:
     guideStep3: "3. Sube las imágenes y pega el prompt de abajo:",
     guideStep4: "4. Copia el JSON que devuelve Claude.",
     guideStep5: "5. Regresa aquí → Agregar Examen → pega el JSON.",
-    guidePrompt: `Estás ayudando a preparar material de estudio para NursePrep, una app de estudio para enfermería.
+    guidePrompt: `Estás ayudando a preparar material de estudio para Quiztagram, una app de estudio para enfermería.
 
 Analiza las imágenes del examen y extrae TODAS las preguntas.
 

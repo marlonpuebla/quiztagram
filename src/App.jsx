@@ -73,13 +73,13 @@ export default function App() {
   const topBar = (title, back = 'home', extra = null) => (
     <div className="top-bar">
       <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-        <button className="back-btn" onClick={() => navigate(back)}>←</button>
+        <button className="back-btn" onClick={() => navigate(back)}><Icon name="back" size={22} /></button>
         <span className="page-title">{title}</span>
       </div>
       <div className="top-actions">
         {extra}
         <button className="lang-btn" onClick={toggleLang}>{t.switchLang}</button>
-        <button className="icon-btn" onClick={toggleTheme}>{theme === 'dark' ? '☀️' : '🌙'}</button>
+        <button className="icon-btn" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /></button>
       </div>
     </div>
   )
@@ -122,22 +122,45 @@ export default function App() {
   )
 }
 
+// ─── SVG ICONS ────────────────────────────────────────────────────────────────
+const Icon = ({ name, size = 22, color = 'currentColor' }) => {
+  const s = { width: size, height: size, display: 'block', flexShrink: 0 }
+  const paths = {
+    home:     <><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H5a1 1 0 01-1-1V9.5z" strokeWidth="1.6" stroke={color} fill="none"/><path d="M9 21V12h6v9" strokeWidth="1.6" stroke={color} fill="none"/></>,
+    trophy:   <><path d="M8 21h8M12 17v4M6 3h12v7a6 6 0 01-12 0V3z" strokeWidth="1.6" stroke={color} fill="none"/><path d="M6 7H3a3 3 0 003 3M18 7h3a3 3 0 01-3 3" strokeWidth="1.6" stroke={color} fill="none"/></>,
+    bars:     <><rect x="3" y="12" width="4" height="9" rx="1" strokeWidth="1.6" stroke={color} fill="none"/><rect x="10" y="7" width="4" height="14" rx="1" strokeWidth="1.6" stroke={color} fill="none"/><rect x="17" y="3" width="4" height="18" rx="1" strokeWidth="1.6" stroke={color} fill="none"/></>,
+    person:   <><circle cx="12" cy="8" r="4" strokeWidth="1.6" stroke={color} fill="none"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" strokeWidth="1.6" stroke={color} fill="none"/></>,
+    plus:     <><path d="M12 5v14M5 12h14" strokeWidth="1.8" stroke={color} strokeLinecap="round"/></>,
+    back:     <><path d="M15 18l-6-6 6-6" strokeWidth="1.8" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
+    sun:      <><circle cx="12" cy="12" r="4" strokeWidth="1.6" stroke={color} fill="none"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" strokeWidth="1.6" stroke={color} strokeLinecap="round"/></>,
+    moon:     <><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" strokeWidth="1.6" stroke={color} fill="none"/></>,
+    logout:   <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" strokeWidth="1.6" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
+    quiz:     <><rect x="4" y="3" width="16" height="18" rx="2" strokeWidth="1.6" stroke={color} fill="none"/><path d="M8 8h8M8 12h8M8 16h5" strokeWidth="1.6" stroke={color} strokeLinecap="round"/></>,
+    repeat:   <><path d="M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3" strokeWidth="1.6" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
+    upload:   <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" strokeWidth="1.6" stroke={color} strokeLinecap="round" strokeLinejoin="round" fill="none"/></>,
+    link:     <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" strokeWidth="1.6" stroke={color} strokeLinecap="round" fill="none"/></>,
+    list:     <><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" strokeWidth="1.8" stroke={color} strokeLinecap="round"/></>,
+    camera:   <><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" strokeWidth="1.6" stroke={color} fill="none"/><circle cx="12" cy="13" r="4" strokeWidth="1.6" stroke={color} fill="none"/></>,
+  }
+  return <svg viewBox="0 0 24 24" style={s} xmlns="http://www.w3.org/2000/svg">{paths[name]}</svg>
+}
+
 // ─── BOTTOM NAV ───────────────────────────────────────────────────────────────
 function BottomNav({ navigate, screen }) {
   const items = [
-    { id: 'home',        icon: '🏠' },
-    { id: 'leaderboard', icon: '🏆' },
-    { id: 'addTest',     icon: '+', create: true },
-    { id: 'history',     icon: '📊' },
-    { id: 'profile',     icon: '👤' },
+    { id: 'home',        icon: 'home' },
+    { id: 'leaderboard', icon: 'trophy' },
+    { id: 'addTest',     icon: 'plus', create: true },
+    { id: 'history',     icon: 'bars' },
+    { id: 'profile',     icon: 'person' },
   ]
   return (
     <nav className="bottom-nav">
       {items.map(item => (
         <button key={item.id} className={`nav-item${screen === item.id ? ' active' : ''}`} onClick={() => navigate(item.id)}>
           {item.create
-            ? <span className="nav-icon-create">{item.icon}</span>
-            : <span className="nav-icon">{item.icon}</span>
+            ? <span className="nav-icon-create"><Icon name={item.icon} size={18} /></span>
+            : <Icon name={item.icon} size={24} />
           }
         </button>
       ))}
@@ -200,11 +223,10 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin }) {
       <div className="auth-card">
         <div style={{ position:'absolute', top:'16px', right:'16px', display:'flex', gap:'8px' }}>
           <button className="lang-btn" onClick={toggleLang}>{lang === 'en' ? 'ES' : 'EN'}</button>
-          <button className="icon-btn" onClick={toggleTheme}>{theme === 'dark' ? '☀️' : '🌙'}</button>
+          <button className="icon-btn" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /></button>
         </div>
         <div className="auth-logo">
-          <div className="logo-icon">🩺</div>
-          <h1 className="logo-title">{t.appName}</h1>
+          <h1 className="logo-title">Quiztagram</h1>
           <p className="logo-sub">{t.tagline}</p>
         </div>
         <div className="tab-row">
@@ -248,9 +270,9 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
       <div className="top-bar">
         <span className="logo-sm">Quiztagram</span>
         <div className="top-actions">
-          <button className="icon-btn" onClick={toggleLang}>{t.switchLang}</button>
-          <button className="icon-btn" onClick={toggleTheme}>{theme === 'dark' ? '☀️' : '🌙'}</button>
-          <button className="icon-btn" onClick={logout}>🚪</button>
+          <button className="lang-btn" onClick={toggleLang}>{t.switchLang}</button>
+          <button className="icon-btn" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /></button>
+          <button className="icon-btn" onClick={logout}><Icon name="logout" size={20} /></button>
         </div>
       </div>
 
@@ -296,16 +318,16 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
 
           <div className="action-grid">
             <button className="action-card primary" onClick={() => navigate('quiz', { testId: selectedTest })}>
-              <span className="ac-icon">📝</span><span className="ac-label">{t.startQuiz}</span>
+              <Icon name="quiz" size={28} /><span className="ac-label">{t.startQuiz}</span>
             </button>
             <button className="action-card remedial" onClick={() => navigate('remedial', { testId: selectedTest })}>
-              <span className="ac-icon">🔁</span><span className="ac-label">{t.remedialMode}</span>
+              <Icon name="repeat" size={28} /><span className="ac-label">{t.remedialMode}</span>
             </button>
             <button className="action-card board" onClick={() => navigate('leaderboard')}>
-              <span className="ac-icon">🏆</span><span className="ac-label">{t.leaderboard}</span>
+              <Icon name="trophy" size={28} /><span className="ac-label">{t.leaderboard}</span>
             </button>
             <button className="action-card hist" onClick={() => navigate('history')}>
-              <span className="ac-icon">📊</span><span className="ac-label">{t.myHistory}</span>
+              <Icon name="bars" size={28} /><span className="ac-label">{t.myHistory}</span>
             </button>
           </div>
         </>
@@ -314,10 +336,10 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
       <div className="section" style={{ paddingBottom:'10px' }}>
         <label className="section-label">{t.tools}</label>
         <div className="tool-row">
-          <button className="tool-btn" onClick={() => navigate('addTest')}>➕ {t.addTest}</button>
-          <button className="tool-btn" onClick={() => navigate('guide')}>📸 {t.createGuide}</button>
-          <button className="tool-btn" onClick={() => navigate('invites')}>🔗 {t.inviteFriends}</button>
-          <button className="tool-btn" onClick={() => navigate('submissions')}>📋 {t.submissions}</button>
+          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('addTest')}><Icon name="upload" size={18} /> {t.addTest}</button>
+          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('guide')}><Icon name="camera" size={18} /> {t.createGuide}</button>
+          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('invites')}><Icon name="link" size={18} /> {t.inviteFriends}</button>
+          <button className="tool-btn" style={{ display:'flex', alignItems:'center', gap:'10px' }} onClick={() => navigate('submissions')}><Icon name="list" size={18} /> {t.submissions}</button>
         </div>
       </div>
 
