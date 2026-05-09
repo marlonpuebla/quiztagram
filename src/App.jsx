@@ -80,7 +80,7 @@ export default function App() {
     </div>
   )
 
-  const commonProps = { user, t, lang, theme, toggleTheme, toggleLang, navigate, topBar }
+  const commonProps = { user, t, lang, theme, toggleTheme, toggleLang, navigate, topBar, currentScreen: screen }
 
   const screens = {
     auth:        <AuthScreen {...commonProps} onLogin={login} />,
@@ -114,6 +114,29 @@ export default function App() {
         </div>
       )}
     </div>
+  )
+}
+
+// ─── BOTTOM NAV ───────────────────────────────────────────────────────────────
+function BottomNav({ navigate, screen }) {
+  const items = [
+    { id: 'home',        icon: '🏠' },
+    { id: 'leaderboard', icon: '🏆' },
+    { id: 'addTest',     icon: '+', create: true },
+    { id: 'history',     icon: '📊' },
+    { id: 'profile',     icon: '👤' },
+  ]
+  return (
+    <nav className="bottom-nav">
+      {items.map(item => (
+        <button key={item.id} className={`nav-item${screen === item.id ? ' active' : ''}`} onClick={() => navigate(item.id)}>
+          {item.create
+            ? <span className="nav-icon-create">{item.icon}</span>
+            : <span className="nav-icon">{item.icon}</span>
+          }
+        </button>
+      ))}
+    </nav>
   )
 }
 
@@ -203,7 +226,7 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin }) {
 
 // ─── HOME ─────────────────────────────────────────────────────────────────────
 function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout }) {
-  const [tests, setTests]             = useState([])
+  const [tests, setTests]               = useState([])
   const [selectedTest, setSelectedTest] = useState(null)
 
   useEffect(() => {
@@ -213,20 +236,21 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
     })
   }, [])
 
+  const selected = tests.find(tt => tt.id === selectedTest)
+
   return (
     <div className="screen">
       <div className="top-bar">
-        <span className="logo-sm">🩺 {t.appName}</span>
+        <span className="logo-sm">Quiztagram</span>
         <div className="top-actions">
-          <button className="lang-btn" onClick={toggleLang}>{t.switchLang}</button>
+          <button className="icon-btn" onClick={toggleLang}>{t.switchLang}</button>
           <button className="icon-btn" onClick={toggleTheme}>{theme === 'dark' ? '☀️' : '🌙'}</button>
-          <button className="icon-btn" onClick={() => navigate('profile')}>👤</button>
           <button className="icon-btn" onClick={logout}>🚪</button>
         </div>
       </div>
 
       <div className="home-hero">
-        <p className="greeting">{t.hello}, <strong>{user.username}</strong> 👋</p>
+        <p className="greeting">{t.hello}, <strong>{user.username}</strong></p>
         <p className="hero-sub">{t.readyToStudy}</p>
       </div>
 
@@ -237,17 +261,34 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
         </div>
       ) : (
         <>
-          <div className="section">
-            <label className="section-label">{t.selectTest}</label>
-            <select className="select" value={selectedTest || ''} onChange={e => setSelectedTest(e.target.value)}>
-              {tests.map(tt => <option key={tt.id} value={tt.id}>{tt.name} — {t.testBy} {tt.created_by}</option>)}
-            </select>
-            {selectedTest && (
-              <button className="tool-btn" style={{ marginTop:'8px' }} onClick={() => navigate('testDetail', { testId: selectedTest })}>
-                ℹ️ View / Rate / Comment
-              </button>
-            )}
+          {/* Stories-style test picker */}
+          <div className="stories-strip">
+            {tests.map(tt => (
+              <div key={tt.id} className="story-item" onClick={() => setSelectedTest(tt.id)}>
+                <div className={`story-ring ${tt.id === selectedTest ? 'active' : 'inactive'}`}>
+                  <div className="story-inner">
+                    <span className="story-emoji">📝</span>
+                  </div>
+                </div>
+                <span className={`story-label${tt.id === selectedTest ? ' active' : ''}`}>{tt.name}</span>
+              </div>
+            ))}
           </div>
+
+          {selected && (
+            <div className="section">
+              <div className="card" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px' }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontWeight:'600', fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{selected.name}</div>
+                  <div style={{ fontSize:'0.76rem', color:'var(--muted)', marginTop:'2px' }}>by {selected.created_by} · {selected.questions?.length} {t.questions}</div>
+                </div>
+                <button className="btn-ghost" style={{ fontSize:'0.78rem', padding:'6px 14px', flexShrink:0 }} onClick={() => navigate('testDetail', { testId: selectedTest })}>
+                  View
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="action-grid">
             <button className="action-card primary" onClick={() => navigate('quiz', { testId: selectedTest })}>
               <span className="ac-icon">📝</span><span className="ac-label">{t.startQuiz}</span>
@@ -265,7 +306,7 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
         </>
       )}
 
-      <div className="section">
+      <div className="section" style={{ paddingBottom:'10px' }}>
         <label className="section-label">{t.tools}</label>
         <div className="tool-row">
           <button className="tool-btn" onClick={() => navigate('addTest')}>➕ {t.addTest}</button>
@@ -274,6 +315,8 @@ function HomeScreen({ user, t, theme, toggleTheme, toggleLang, navigate, logout 
           <button className="tool-btn" onClick={() => navigate('submissions')}>📋 {t.submissions}</button>
         </div>
       </div>
+
+      <BottomNav navigate={navigate} screen="home" />
     </div>
   )
 }
@@ -705,7 +748,7 @@ function ResultsScreen({ t, lang, data, navigate, topBar }) {
 }
 
 // ─── LEADERBOARD ─────────────────────────────────────────────────────────────
-function LeaderboardScreen({ t, topBar }) {
+function LeaderboardScreen({ t, topBar, navigate }) {
   const [rows, setRows]           = useState([])
   const [reviewerIds, setReviewerIds] = useState(new Set())
   useEffect(() => {
@@ -720,40 +763,54 @@ function LeaderboardScreen({ t, topBar }) {
   }, [])
   const medal = i => i===0?'gold':i===1?'silver':i===2?'bronze':''
   return (
-    <div className="screen">{topBar(t.leaderboard, 'home')}
-      <div className="leaderboard-list">
-        {rows.length===0 && <p className="no-data">{t.noHistory}</p>}
-        {rows.map((u,i) => (
-          <div key={u.id} className="lb-row">
-            <span className={`lb-rank ${medal(i)}`}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</span>
-            <span className="lb-name">{u.username}{reviewerIds.has(u.id)&&<span className="reviewer-badge">⭐ Reviewer</span>}</span>
-            <div style={{ textAlign:'right' }}>
-              <div className="lb-acc">{u.overall_accuracy||0}%</div>
-              <div className="lb-sessions">{u.session_count||0} {t.sessions}</div>
-            </div>
-          </div>
-        ))}
+    <div className="screen">
+      <div className="top-bar">
+        <span className="logo-sm">Quiztagram</span>
+        <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{t.leaderboard}</span>
       </div>
+      <div style={{ padding:'12px 0 0' }}>
+        {rows.length===0 && <p className="no-data">{t.noHistory}</p>}
+        <div className="leaderboard-list">
+          {rows.map((u,i) => (
+            <div key={u.id} className="lb-row">
+              <span className={`lb-rank ${medal(i)}`}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</span>
+              <span className="lb-name">{u.username}{reviewerIds.has(u.id)&&<span className="reviewer-badge">⭐ Reviewer</span>}</span>
+              <div style={{ textAlign:'right' }}>
+                <div className="lb-acc">{u.overall_accuracy||0}%</div>
+                <div className="lb-sessions">{u.session_count||0} {t.sessions}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <BottomNav navigate={navigate} screen="leaderboard" />
     </div>
   )
 }
 
 // ─── HISTORY ─────────────────────────────────────────────────────────────────
-function HistoryScreen({ user, t, topBar }) {
+function HistoryScreen({ user, t, topBar, navigate }) {
   const [sessions, setSessions] = useState([])
   useEffect(() => { getUserSessions(user.id).then(setSessions) }, [])
   return (
-    <div className="screen">{topBar(t.myHistory, 'home')}
-      <div className="history-list">
-        {sessions.length===0 && <p className="no-data">{t.noHistory}</p>}
-        {sessions.map(s => (
-          <div key={s.id} className="hist-row">
-            <div className="hist-top"><span className="hist-test">{s.test_name}</span><span className="hist-score">{s.accuracy}%</span></div>
-            <div className="hist-meta">{new Date(s.created_at).toLocaleDateString()} · {s.score}/{s.total}</div>
-            <span className="hist-private">{s.is_public?'🌐 '+t.publicResult:'🔒 '+t.privateResult}</span>
-          </div>
-        ))}
+    <div className="screen">
+      <div className="top-bar">
+        <span className="logo-sm">Quiztagram</span>
+        <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{t.myHistory}</span>
       </div>
+      <div style={{ padding:'12px 0 0' }}>
+        {sessions.length===0 && <p className="no-data">{t.noHistory}</p>}
+        <div className="history-list">
+          {sessions.map(s => (
+            <div key={s.id} className="hist-row">
+              <div className="hist-top"><span className="hist-test">{s.test_name}</span><span className="hist-score">{s.accuracy}%</span></div>
+              <div className="hist-meta">{new Date(s.created_at).toLocaleDateString()} · {s.score}/{s.total}</div>
+              <span className="hist-private">{s.is_public?'🌐 '+t.publicResult:'🔒 '+t.privateResult}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <BottomNav navigate={navigate} screen="history" />
     </div>
   )
 }
@@ -1073,12 +1130,23 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
   }
 
   return (
-    <div className="screen">{topBar(t.profile, 'home')}
+    <div className="screen">
+      <div className="top-bar">
+        <span className="logo-sm">Quiztagram</span>
+        <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{user.username}</span>
+      </div>
       <div className="profile-content">
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'8px 0 16px' }}>
-          <div className="profile-avatar">{user.username[0].toUpperCase()}</div>
-          <div className="profile-name">{user.username}</div>
-          <div className="profile-meta">{user.session_count||0} sessions · {user.overall_accuracy||0}% accuracy</div>
+        <div style={{ display:'flex', alignItems:'center', gap:'24px', padding:'16px 0 8px' }}>
+          <div className="profile-avatar"><div className="profile-avatar-inner">{user.username[0].toUpperCase()}</div></div>
+          <div>
+            <div className="profile-name">{user.username}</div>
+            <div className="profile-meta" style={{ marginTop:'4px' }}>{user.upload_count||0} tests uploaded</div>
+          </div>
+        </div>
+        <div className="profile-stats-row">
+          <div className="profile-stat-item"><div className="profile-stat-num">{user.session_count||0}</div><div className="profile-stat-lbl">Sessions</div></div>
+          <div className="profile-stat-item"><div className="profile-stat-num">{user.overall_accuracy||0}%</div><div className="profile-stat-lbl">Accuracy</div></div>
+          <div className="profile-stat-item"><div className="profile-stat-num">{user.perfect_streak||0}</div><div className="profile-stat-lbl">Streak</div></div>
         </div>
         {(user.achievements||[]).length > 0 && (
           <div className="card">
@@ -1110,6 +1178,7 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
           ))}
         </>}
       </div>
+      <BottomNav navigate={navigate} screen="profile" />
     </div>
   )
 }
