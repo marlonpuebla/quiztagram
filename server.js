@@ -4,12 +4,49 @@ import pg from 'pg'
 import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import Stripe from 'stripe'
 
 const { Pool } = pg
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const app = express()
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null
+
+// Stripe webhook needs raw body — register before express.json()
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe not configured' })
+  const sig = req.headers['stripe-signature']
+  let event
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET)
+  } catch (err) {
+    return res.status(400).send(`Webhook error: ${err.message}`)
+  }
+
+  const grantPro = async (customerId, months = 1) => {
+    const { rows } = await pool.query('SELECT id, pro_expires_at FROM users WHERE stripe_customer_id = $1', [customerId])
+    if (!rows[0]) return
+    const base = rows[0].pro_expires_at && new Date(rows[0].pro_expires_at) > new Date()
+      ? new Date(rows[0].pro_expires_at) : new Date()
+    base.setMonth(base.getMonth() + months)
+    await pool.query('UPDATE users SET pro_expires_at = $1 WHERE id = $2', [base, rows[0].id])
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object
+    const userId = session.metadata?.user_id
+    const customerId = session.customer
+    if (userId) await pool.query('UPDATE users SET stripe_customer_id = $1 WHERE id = $2', [customerId, userId])
+    await grantPro(customerId, 1)
+  } else if (event.type === 'invoice.paid') {
+    await grantPro(event.data.object.customer, 1)
+  } else if (event.type === 'customer.subscription.deleted') {
+    // subscription cancelled — pro_expires_at stays until it naturally expires, no action needed
+  }
+
+  res.json({ received: true })
+})
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
@@ -45,6 +82,13 @@ app.post('/api/auth/register', async (req, res) => {
        VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, '{}', false) RETURNING *`,
       [username, password_hash]
     )
+    // Grant 1 month Pro to the referrer
+    if (codes[0].created_by && codes[0].created_by !== 'system' && codes[0].created_by !== 'admin') {
+      await pool.query(`
+        UPDATE users SET pro_expires_at =
+          GREATEST(COALESCE(pro_expires_at, NOW()), NOW()) + INTERVAL '1 month'
+        WHERE username = $1`, [codes[0].created_by])
+    }
     res.json({ user: rows[0] })
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ error: 'username_taken' })
@@ -565,6 +609,57 @@ Return ONLY JSON.` }],
   }
 })
 
+// ── Pro / Stripe ──────────────────────────────────────────────────────────────
+
+app.get('/api/users/:id/pro-status', async (req, res) => {
+  const { rows } = await pool.query('SELECT pro_expires_at, ai_import_count, ai_import_reset_at FROM users WHERE id = $1', [req.params.id])
+  if (!rows[0]) return res.status(404).json({ error: 'not_found' })
+  const now = new Date()
+  const isPro = rows[0].pro_expires_at && new Date(rows[0].pro_expires_at) > now
+  const resetAt = rows[0].ai_import_reset_at ? new Date(rows[0].ai_import_reset_at) : null
+  const count = (!resetAt || resetAt < now) ? 0 : (rows[0].ai_import_count || 0)
+  res.json({ isPro, pro_expires_at: rows[0].pro_expires_at, ai_import_count: count })
+})
+
+app.post('/api/stripe/create-checkout', async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe not configured' })
+  const { user_id } = req.body
+  if (!user_id) return res.status(400).json({ error: 'user_id required' })
+  const { rows } = await pool.query('SELECT stripe_customer_id, email FROM users WHERE id = $1', [user_id])
+  if (!rows[0]) return res.status(404).json({ error: 'user not found' })
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      customer: rows[0].stripe_customer_id || undefined,
+      customer_email: rows[0].stripe_customer_id ? undefined : (rows[0].email || undefined),
+      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      metadata: { user_id },
+      success_url: `${process.env.APP_URL || 'https://quiztagram.com'}?pro=success`,
+      cancel_url:  `${process.env.APP_URL || 'https://quiztagram.com'}?pro=cancel`,
+    })
+    res.json({ url: session.url })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/stripe/portal', async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe not configured' })
+  const { user_id } = req.body
+  const { rows } = await pool.query('SELECT stripe_customer_id FROM users WHERE id = $1', [user_id])
+  if (!rows[0]?.stripe_customer_id) return res.status(400).json({ error: 'No subscription found' })
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: rows[0].stripe_customer_id,
+      return_url: process.env.APP_URL || 'https://quiztagram.com',
+    })
+    res.json({ url: session.url })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── AI Artifact Import ────────────────────────────────────────────────────────
 
 app.post('/api/tests/import-artifact', async (req, res) => {
@@ -573,6 +668,25 @@ app.post('/api/tests/import-artifact', async (req, res) => {
   const { artifactCode, name, created_by, created_by_id, college, program, semester } = req.body
   if (!artifactCode?.trim()) return res.status(400).json({ error: 'No artifact provided' })
   if (!name?.trim()) return res.status(400).json({ error: 'Test name required' })
+
+  // Enforce free tier limit (3 imports/month)
+  const { rows: userRows } = await pool.query(
+    'SELECT pro_expires_at, ai_import_count, ai_import_reset_at FROM users WHERE id = $1', [created_by_id])
+  const u = userRows[0]
+  const now = new Date()
+  const isPro = u?.pro_expires_at && new Date(u.pro_expires_at) > now
+  if (!isPro) {
+    const resetAt = u?.ai_import_reset_at ? new Date(u.ai_import_reset_at) : null
+    const count = (!resetAt || resetAt < now) ? 0 : (u?.ai_import_count || 0)
+    if (count >= 3) return res.status(403).json({ error: 'import_limit', message: 'Free accounts are limited to 3 AI imports per month. Upgrade to Pro for unlimited imports.' })
+    const nextReset = new Date(); nextReset.setMonth(nextReset.getMonth() + 1)
+    if (!resetAt || resetAt < now) {
+      await pool.query('UPDATE users SET ai_import_count = 1, ai_import_reset_at = $1 WHERE id = $2', [nextReset, created_by_id])
+    } else {
+      await pool.query('UPDATE users SET ai_import_count = ai_import_count + 1 WHERE id = $1', [created_by_id])
+    }
+  }
+
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

@@ -212,3 +212,18 @@ export async function requestPasswordReset(username) {
 export async function resetPassword(token, passwordHash) {
   return call('POST', '/api/auth/reset-password', { token, password_hash: passwordHash })
 }
+
+// ── Pro / Stripe ──────────────────────────────────────────────────────────────
+
+export async function getProStatus(userId) {
+  const data = await call('GET', `/api/users/${userId}/pro-status`)
+  return data || { isPro: false, ai_import_count: 0 }
+}
+
+export async function createCheckoutSession(userId) {
+  return call('POST', '/api/stripe/create-checkout', { user_id: userId })
+}
+
+export async function createPortalSession(userId) {
+  return call('POST', '/api/stripe/portal', { user_id: userId })
+}
