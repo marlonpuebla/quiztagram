@@ -1,0 +1,186 @@
+export const T = {
+  en: {
+    appName: "NursePrep", tagline: "Study smarter. Score higher.",
+    signIn: "Sign In", register: "Register", username: "Username", password: "Password",
+    inviteCode: "Invite Code", createAccount: "Create Account", logout: "Log Out",
+    usernameNotFound: "Username not found.", wrongPassword: "Incorrect password.",
+    enterUsername: "Enter a username.", enterPassword: "Enter a password.",
+    enterInvite: "Enter an invite code.", invalidInvite: "Invalid or already-used invite code.",
+    completeCaptcha: "Complete the bot check.", captchaPassed: "✅ Bot check passed",
+    captchaLabel: "Quick check — what is", captchaErr: "Incorrect, try again.",
+    startQuiz: "Start Quiz", remedialMode: "Remedial Mode", leaderboard: "Leaderboard",
+    myHistory: "My History", addTest: "Add Test", createGuide: "Create Test Guide",
+    inviteFriends: "Invite Friends", noTests: "No tests yet. Add your first test!",
+    selectTest: "Select a Test", hello: "Hello", readyToStudy: "Ready to study?",
+    tools: "Tools", profile: "My Profile", submissions: "My Submissions",
+    filterQuestions: "Filter Questions", byWrongHistory: "My Wrong Answers",
+    byTopic: "By Topic", byDifficulty: "By Difficulty", allQuestions: "All Questions",
+    confidence: "How confident are you?", low: "Low", moderate: "Moderate", high: "High",
+    submit: "Submit", next: "Next →", correct: "✅ Correct!", wrong: "❌ Wrong",
+    correctAnswer: "Correct answer:", typeAnswer: "Type your answer...",
+    sessionComplete: "Session Complete!", score: "Score", accuracy: "Accuracy",
+    attempts: "Attempts", confidenceVsAccuracy: "Confidence vs Accuracy",
+    shareResult: "Copy Share Link", backHome: "Back to Home", startAgain: "Start Again",
+    resume: "Resume Session", newSession: "New Session",
+    personalRemedial: "My Weakest Questions", communityRemedial: "Hardest for Everyone",
+    pasteJSON: "Paste Test JSON here", testName: "Test Name", addTestBtn: "Add Test",
+    tagsLoading: "AI validating & tagging…", cancel: "Cancel",
+    publicResult: "Public", privateResult: "Private", resultVisibility: "Result Visibility",
+    reportTest: "Report Errors", reportReason: "Describe the issue", submitReport: "Submit",
+    flagged: "⚠️ Flagged for Review", reviewed: "✅ Reviewed",
+    rateTest: "Rate this test", leaveComment: "Leave a comment…", postComment: "Post",
+    comments: "Comments", noComments: "No comments yet.",
+    hideSubmission: "Hide", deleteSubmission: "Delete",
+    submissionHidden: "Hidden", confirmDelete: "Permanently delete this test? This cannot be undone.",
+    totalTaken: "Times Taken", avgScore: "Avg Score", thumbsUp: "👍", thumbsDown: "👎",
+    generateInvite: "Generate Invite Code", yourCodes: "Your Codes",
+    copy: "Copy", copied: "Copied!", used: "Used", unused: "Unused",
+    reviewFlagged: "Review Flagged Test", saveCorrections: "Save & Mark Reviewed",
+    editQuestion: "Edit Question", editAnswer: "Edit Answer",
+    profilePrivacy: "Profile Privacy", saveSettings: "Save Settings",
+    achievementUnlocked: "Achievement Unlocked!",
+    achievements: {
+      first_test:      { title: "First Steps!",       desc: "Completed your first quiz session." },
+      ten_tests:       { title: "On a Roll!",          desc: "10 sessions completed!" },
+      fifty_tests:     { title: "Dedicated Nurse!",    desc: "50 sessions. Incredible!" },
+      perfect_streak_5:{ title: "🔥 On Fire!",         desc: "5 perfect sessions in a row!" },
+      first_upload:    { title: "Contributor!",        desc: "You uploaded your first test!" },
+      first_liked:     { title: "Crowd Pleaser!",      desc: "Your test got its first 👍!" },
+      top_liked:       { title: "Community Star!",     desc: "Your test is the most liked!" },
+      accuracy_90:     { title: "Sharp Mind!",         desc: "Reached 90% overall accuracy!" },
+    },
+    guideTitle: "How to Create a Test",
+    guideStep1: "1. Take clear photos or screenshots of your test pages.",
+    guideStep2: "2. Go to claude.ai and start a new conversation.",
+    guideStep3: "3. Upload your images and paste the prompt below:",
+    guideStep4: "4. Copy the JSON Claude returns.",
+    guideStep5: "5. Come back here → Add Test → paste the JSON.",
+    guidePrompt: `You are helping prepare study material for NursePrep, a nursing exam study app.
+
+Analyze the uploaded test image(s) and extract ALL questions.
+
+IMPORTANT VALIDATION: If the content does not appear to be a legitimate nursing or medical exam (e.g. it contains inappropriate, unrelated, or nonsensical content), respond only with:
+{"error": "invalid_content", "message": "Content does not appear to be a valid nursing exam."}
+
+For each valid question return a JSON array with this EXACT structure:
+[
+  {
+    "id": "unique_string",
+    "type": "multiple_choice",
+    "question": { "en": "Question in English", "es": "Question in Spanish" },
+    "options": { "en": ["Option A","Option B","Option C","Option D"], "es": ["Opción A","Opción B","Opción C","Opción D"] },
+    "answer": { "en": "Exact correct option text in English", "es": "Exact correct option text in Spanish" },
+    "topic": "short topic tag e.g. Pharmacology",
+    "difficulty": "easy"
+  }
+]
+For fill_in_the_blank questions use type "fill_in_the_blank" and omit the "options" field.
+Rules:
+- Translate EVERY question, option, and answer into both English AND Spanish.
+- difficulty must be "easy", "medium", or "hard".
+- Return ONLY the raw JSON array — no markdown fences, no explanation.`,
+    sessionPrivacyNote: "Public results appear on the leaderboard and can be shared via link.",
+    noHistory: "No sessions yet.", sessions: "Sessions",
+    filterAll: "All", filterEasy: "Easy", filterMedium: "Medium", filterHard: "Hard",
+    switchLang: "ES",
+    sharableLink: "Shareable Link", linkCopied: "Link copied!",
+    confHighWrong: "High confidence, wrong",
+    confLowRight: "Low confidence, correct",
+    testBy: "by", questions: "questions",
+    public: "Public", private: "Private",
+    setupRequired: "Setup Required",
+    setupMsg: "Add your Supabase credentials to .env to connect the database.",
+  },
+  es: {
+    appName: "NursePrep", tagline: "Estudia mejor. Puntúa más alto.",
+    signIn: "Iniciar Sesión", register: "Registrarse", username: "Usuario", password: "Contraseña",
+    inviteCode: "Código de Invitación", createAccount: "Crear Cuenta", logout: "Salir",
+    usernameNotFound: "Usuario no encontrado.", wrongPassword: "Contraseña incorrecta.",
+    enterUsername: "Ingresa un usuario.", enterPassword: "Ingresa una contraseña.",
+    enterInvite: "Ingresa un código.", invalidInvite: "Código inválido o ya usado.",
+    completeCaptcha: "Completa la verificación.", captchaPassed: "✅ Verificación aprobada",
+    captchaLabel: "Verificación — ¿cuánto es", captchaErr: "Incorrecto, intenta de nuevo.",
+    startQuiz: "Iniciar Quiz", remedialMode: "Modo Remedial", leaderboard: "Tabla de Líderes",
+    myHistory: "Mi Historial", addTest: "Agregar Examen", createGuide: "Guía para Crear Examen",
+    inviteFriends: "Invitar Amigos", noTests: "Sin exámenes aún. ¡Agrega el primero!",
+    selectTest: "Seleccionar Examen", hello: "Hola", readyToStudy: "¿Listo para estudiar?",
+    tools: "Herramientas", profile: "Mi Perfil", submissions: "Mis Envíos",
+    filterQuestions: "Filtrar Preguntas", byWrongHistory: "Mis Errores",
+    byTopic: "Por Tema", byDifficulty: "Por Dificultad", allQuestions: "Todas",
+    confidence: "¿Qué tan seguro estás?", low: "Bajo", moderate: "Moderado", high: "Alto",
+    submit: "Enviar", next: "Siguiente →", correct: "✅ ¡Correcto!", wrong: "❌ Incorrecto",
+    correctAnswer: "Respuesta correcta:", typeAnswer: "Escribe tu respuesta...",
+    sessionComplete: "¡Sesión Completa!", score: "Puntaje", accuracy: "Precisión",
+    attempts: "Intentos", confidenceVsAccuracy: "Confianza vs Precisión",
+    shareResult: "Copiar Enlace", backHome: "Volver", startAgain: "Empezar de Nuevo",
+    resume: "Continuar Sesión", newSession: "Nueva Sesión",
+    personalRemedial: "Mis Preguntas Débiles", communityRemedial: "Más Difíciles para Todos",
+    pasteJSON: "Pegar JSON del Examen", testName: "Nombre del Examen", addTestBtn: "Agregar",
+    tagsLoading: "IA validando y etiquetando…", cancel: "Cancelar",
+    publicResult: "Público", privateResult: "Privado", resultVisibility: "Visibilidad",
+    reportTest: "Reportar Errores", reportReason: "Describe el problema", submitReport: "Enviar",
+    flagged: "⚠️ Marcado para Revisión", reviewed: "✅ Revisado",
+    rateTest: "Calificar este examen", leaveComment: "Dejar un comentario…", postComment: "Publicar",
+    comments: "Comentarios", noComments: "Sin comentarios aún.",
+    hideSubmission: "Ocultar", deleteSubmission: "Eliminar",
+    submissionHidden: "Oculto", confirmDelete: "¿Eliminar permanentemente? Esta acción no se puede deshacer.",
+    totalTaken: "Veces Tomado", avgScore: "Puntaje Promedio", thumbsUp: "👍", thumbsDown: "👎",
+    generateInvite: "Generar Código", yourCodes: "Tus Códigos",
+    copy: "Copiar", copied: "¡Copiado!", used: "Usado", unused: "Sin usar",
+    reviewFlagged: "Revisar Examen Marcado", saveCorrections: "Guardar y Marcar como Revisado",
+    editQuestion: "Editar Pregunta", editAnswer: "Editar Respuesta",
+    profilePrivacy: "Privacidad del Perfil", saveSettings: "Guardar",
+    achievementUnlocked: "¡Logro Desbloqueado!",
+    achievements: {
+      first_test:      { title: "¡Primeros Pasos!",      desc: "Completaste tu primera sesión." },
+      ten_tests:       { title: "¡En Racha!",             desc: "¡10 sesiones completadas!" },
+      fifty_tests:     { title: "¡Enfermero Dedicado!",   desc: "50 sesiones. ¡Increíble!" },
+      perfect_streak_5:{ title: "🔥 ¡En Llamas!",         desc: "¡5 sesiones perfectas seguidas!" },
+      first_upload:    { title: "¡Colaborador!",          desc: "¡Subiste tu primer examen!" },
+      first_liked:     { title: "¡Popular!",              desc: "¡Tu examen recibió su primer 👍!" },
+      top_liked:       { title: "¡Estrella Comunitaria!", desc: "¡Tu examen es el más valorado!" },
+      accuracy_90:     { title: "¡Mente Aguda!",          desc: "¡Alcanzaste 90% de precisión!" },
+    },
+    guideTitle: "Cómo Crear un Examen",
+    guideStep1: "1. Toma fotos o capturas de pantalla de tu examen.",
+    guideStep2: "2. Ve a claude.ai e inicia una nueva conversación.",
+    guideStep3: "3. Sube las imágenes y pega el prompt de abajo:",
+    guideStep4: "4. Copia el JSON que devuelve Claude.",
+    guideStep5: "5. Regresa aquí → Agregar Examen → pega el JSON.",
+    guidePrompt: `Estás ayudando a preparar material de estudio para NursePrep, una app de estudio para enfermería.
+
+Analiza las imágenes del examen y extrae TODAS las preguntas.
+
+VALIDACIÓN IMPORTANTE: Si el contenido NO parece ser un examen legítimo de enfermería o medicina (por ejemplo, contiene contenido inapropiado, irrelevante o sin sentido), responde ÚNICAMENTE con:
+{"error": "invalid_content", "message": "El contenido no parece ser un examen de enfermería válido."}
+
+Para cada pregunta válida devuelve un arreglo JSON con esta estructura EXACTA:
+[
+  {
+    "id": "cadena_unica",
+    "type": "multiple_choice",
+    "question": { "en": "Question in English", "es": "Pregunta en español" },
+    "options": { "en": ["Option A","Option B","Option C","Option D"], "es": ["Opción A","Opción B","Opción C","Opción D"] },
+    "answer": { "en": "Exact correct option in English", "es": "Opción correcta exacta en español" },
+    "topic": "etiqueta corta ej. Farmacología",
+    "difficulty": "easy"
+  }
+]
+Para preguntas de completar usa type "fill_in_the_blank" y omite "options".
+Reglas:
+- Traduce TODAS las preguntas, opciones y respuestas a inglés Y español.
+- difficulty debe ser "easy", "medium" o "hard".
+- Devuelve SOLO el arreglo JSON sin markdown ni explicaciones.`,
+    sessionPrivacyNote: "Los resultados públicos aparecen en la tabla y se pueden compartir.",
+    noHistory: "Sin sesiones aún.", sessions: "Sesiones",
+    filterAll: "Todos", filterEasy: "Fácil", filterMedium: "Medio", filterHard: "Difícil",
+    switchLang: "EN",
+    sharableLink: "Enlace Compartible", linkCopied: "¡Enlace copiado!",
+    confHighWrong: "Alta confianza, incorrecto",
+    confLowRight: "Baja confianza, correcto",
+    testBy: "por", questions: "preguntas",
+    public: "Público", private: "Privado",
+    setupRequired: "Configuración Requerida",
+    setupMsg: "Agrega tus credenciales de Supabase en .env para conectar la base de datos.",
+  }
+}
