@@ -8,7 +8,9 @@ import {
   saveQuizResume, getQuizResume, deleteQuizResume, getTestStats,
   followUser, unfollowUser, checkFollow, getFollowers, getFollowing,
   getNotifications, getUnreadNotificationCount, markNotificationsRead, createNotification,
-  getTestVerifications, upsertVerification
+  getTestVerifications, upsertVerification,
+  requestPasswordReset, resetPassword,
+  getAcademicSuggestions
 } from './db'
 import { STYLES } from './styles'
 
@@ -18,7 +20,7 @@ const shuffle = arr => [...arr].sort(() => Math.random() - 0.5)
 const isProfileComplete = u => !!(u?.college && u?.program && u?.semester)
 
 const needsSemesterUpdate = u => {
-  if (!u?.enrolled && !u?.classes?.length) return false
+  if (!u?.enrolled && !u?.class_schedule?.length) return false
   if (!u?.classes_updated_at) return u?.enrolled || false
   return Date.now() - new Date(u.classes_updated_at) > 120 * 86400000
 }
@@ -65,6 +67,16 @@ export default function App() {
     const interval = setInterval(() => getUnreadNotificationCount(user.id).then(setNotifCount), 60000)
     return () => clearInterval(interval)
   }, [user])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const reset = params.get('reset')
+    if (reset) {
+      window.history.replaceState({}, '', '/')
+      setScreen('resetPassword')
+      setScreenData({ token: reset })
+    }
+  }, [])
 
   const toggleTheme = () => setTheme(th => { const n = th === 'dark' ? 'light' : 'dark'; localStorage.setItem('np_theme', n); return n })
   const toggleLang  = () => setLang(l  => { const n = l  === 'en'   ? 'es'    : 'en';   localStorage.setItem('np_lang',  n); return n })
@@ -117,7 +129,7 @@ export default function App() {
   )
 
   const commonProps = { user, t, lang, theme, toggleTheme, toggleLang, navigate, topBar, currentScreen: screen }
-  const showSidebar = user && screen !== 'auth' && screen !== 'changePassword'
+  const showSidebar = user && screen !== 'auth' && screen !== 'changePassword' && screen !== 'resetPassword'
 
   const screens = {
     auth:           <AuthScreen {...commonProps} onLogin={login} />,
@@ -137,10 +149,14 @@ export default function App() {
     results:        <ResultsScreen {...commonProps} data={screenData} />,
     review:         <ReviewScreen {...commonProps} data={screenData} />,
     changePassword: <ChangePasswordScreen {...commonProps} doUpdateUser={doUpdateUser} />,
+    tos:            <TosScreen user={user} navigate={navigate} />,
+    privacy:        <PrivacyScreen user={user} navigate={navigate} />,
+    forgotPassword: <ForgotPasswordScreen t={t} navigate={navigate} />,
+    resetPassword:  <ResetPasswordScreen t={t} data={screenData} navigate={navigate} />,
   }
 
   return (
-    <div className={`app ${theme}`}>
+    <div className={`app ${theme}${showSidebar ? '' : ' no-sidebar'}`}>
       <style>{STYLES}</style>
       {showSidebar && (
         <Sidebar navigate={navigate} screen={screen} user={user} logout={logout}
@@ -217,6 +233,10 @@ function Sidebar({ navigate, screen, user, logout, t, theme, toggleTheme, toggle
         <button className="sidebar-item" onClick={toggleLang}><Icon name="list" size={20} /><span>{t.switchLang}</span></button>
         <button className="sidebar-item" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /><span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button>
         <button className="sidebar-item" onClick={logout}><Icon name="logout" size={20} /><span>{t.logout}</span></button>
+        <div className="sidebar-legal">
+          <button onClick={() => navigate('tos')}>Terms</button>
+          <button onClick={() => navigate('privacy')}>Privacy</button>
+        </div>
       </div>
     </nav>
   )
@@ -271,14 +291,21 @@ function Captcha({ t, onPass }) {
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
-function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin }) {
-  const [mode, setMode]       = useState('login')
+function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin, navigate }) {
+  const [mode, setMode]         = useState('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [invite, setInvite]   = useState('')
+  const [invite, setInvite]     = useState('')
   const [captchaDone, setCaptchaDone] = useState(false)
-  const [err, setErr]         = useState('')
-  const [loading, setLoading] = useState(false)
+  const [err, setErr]           = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [showHero, setShowHero] = useState(() => window.innerWidth >= 768)
+
+  useEffect(() => {
+    const handler = () => setShowHero(window.innerWidth >= 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
   const handle = async () => {
     setErr('')
@@ -287,7 +314,7 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin }) {
     setLoading(true)
     if (mode === 'login') {
       const { user, error } = await loginUser(username.trim(), password.trim())
-      if (error) setErr(error === 'invalid' ? t.usernameNotFound : t.wrongPassword)
+      if (error) setErr(t.usernameNotFound)
       else onLogin(user)
     } else {
       if (!invite.trim()) { setErr(t.enterInvite); setLoading(false); return }
@@ -300,34 +327,85 @@ function AuthScreen({ t, lang, theme, toggleTheme, toggleLang, onLogin }) {
     setLoading(false)
   }
 
+  const features = [
+    { icon:'quiz',   title: t.heroF1Title, desc: t.heroF1Desc },
+    { icon:'bars',   title: t.heroF2Title, desc: t.heroF2Desc },
+    { icon:'trophy', title: t.heroF3Title, desc: t.heroF3Desc },
+    { icon:'medal',  title: t.heroF4Title, desc: t.heroF4Desc },
+  ]
+
   return (
     <div className={`auth-screen ${theme}`}>
-      <div className="auth-card">
-        <div style={{ position:'absolute', top:'16px', right:'16px', display:'flex', gap:'8px' }}>
-          <button className="lang-btn" onClick={toggleLang}>{lang === 'en' ? 'ES' : 'EN'}</button>
-          <button className="icon-btn" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /></button>
+      <div className="auth-layout">
+
+        {/* ── Left Hero Panel (desktop only) ── */}
+        {showHero && <div className="auth-hero">
+          <div className="auth-hero-inner">
+            <div className="auth-hero-logo">Quiztagram</div>
+            <div className="auth-hero-tagline">{t.tagline}</div>
+            <div className="auth-hero-sub">{t.heroSubtext}</div>
+            <div className="auth-hero-features">
+              {features.map(f => (
+                <div key={f.icon} className="auth-hero-feature">
+                  <div className="auth-hero-feature-icon">
+                    <Icon name={f.icon} size={20} color="var(--ig-blue)" />
+                  </div>
+                  <div>
+                    <div className="auth-hero-feature-title">{f.title}</div>
+                    <div className="auth-hero-feature-desc">{f.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>}
+
+        {/* ── Right Form Panel ── */}
+        <div className="auth-panel">
+          <div className="auth-controls">
+            <button className="lang-btn" onClick={toggleLang}>{lang === 'en' ? 'ES' : 'EN'}</button>
+            <button className="icon-btn" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} /></button>
+          </div>
+          <div className="auth-card">
+            <div className="auth-logo">
+              <h1 className="logo-title">Quiztagram</h1>
+              <p className="logo-sub">{t.tagline}</p>
+            </div>
+            <div className="tab-row">
+              <button className={`tab${mode === 'login' ? ' active' : ''}`} onClick={() => { setMode('login'); setErr('') }}>{t.signIn}</button>
+              <button className={`tab${mode === 'register' ? ' active' : ''}`} onClick={() => { setMode('register'); setErr('') }}>{t.register}</button>
+            </div>
+            <div className="auth-fields">
+              <input className="field" placeholder={mode === 'login' ? t.usernameOrEmail : t.username}
+                value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="off" />
+              <input className="field" type="password" placeholder={t.password} value={password}
+                onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handle()} />
+              {mode === 'register' && <>
+                <input className="field" placeholder={t.inviteCode} value={invite}
+                  onChange={e => setInvite(e.target.value)} autoCapitalize="characters" />
+                {!captchaDone ? <Captcha t={t} onPass={() => setCaptchaDone(true)} /> : <p className="captcha-ok">{t.captchaPassed}</p>}
+              </>}
+              {err && <p className="field-err">{err}</p>}
+              <button className="btn-primary full" onClick={handle} disabled={loading}>
+                {loading ? <span className="spinner" /> : mode === 'login' ? t.signIn : t.createAccount}
+              </button>
+              {mode === 'login' && (
+                <button className="btn-ghost full" style={{ marginTop:'4px', fontSize:'0.82rem' }}
+                  onClick={() => navigate('forgotPassword')}>
+                  {t.forgotPassword}
+                </button>
+              )}
+            </div>
+            {mode === 'register' && <p className="auth-hint">First invite code: <strong>NURSE2026</strong></p>}
+            <div className="auth-legal">
+              By using Quiztagram you agree to our{' '}
+              <button onClick={() => navigate('tos')}>Terms of Service</button>
+              {' '}and{' '}
+              <button onClick={() => navigate('privacy')}>Privacy Policy</button>.
+            </div>
+          </div>
         </div>
-        <div className="auth-logo">
-          <h1 className="logo-title">Quiztagram</h1>
-          <p className="logo-sub">{t.tagline}</p>
-        </div>
-        <div className="tab-row">
-          <button className={`tab${mode === 'login' ? ' active' : ''}`} onClick={() => { setMode('login'); setErr('') }}>{t.signIn}</button>
-          <button className={`tab${mode === 'register' ? ' active' : ''}`} onClick={() => { setMode('register'); setErr('') }}>{t.register}</button>
-        </div>
-        <div className="auth-fields">
-          <input className="field" placeholder={t.username} value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="off" />
-          <input className="field" type="password" placeholder={t.password} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handle()} />
-          {mode === 'register' && <>
-            <input className="field" placeholder={t.inviteCode} value={invite} onChange={e => setInvite(e.target.value)} autoCapitalize="characters" />
-            {!captchaDone ? <Captcha t={t} onPass={() => setCaptchaDone(true)} /> : <p className="captcha-ok">{t.captchaPassed}</p>}
-          </>}
-          {err && <p className="field-err">{err}</p>}
-          <button className="btn-primary full" onClick={handle} disabled={loading}>
-            {loading ? <span className="spinner" /> : mode === 'login' ? t.signIn : t.createAccount}
-          </button>
-        </div>
-        {mode === 'register' && <p className="auth-hint">First invite code: <strong>NURSE2026</strong></p>}
+
       </div>
     </div>
   )
@@ -1266,41 +1344,67 @@ function AddTestScreen({ user, t, lang, navigate, doUpdateUser, checkAchievement
     setLoading(false)
   }
 
+  const [collegeSuggs, setCollegeSuggs] = useState([])
+  const [programSuggs, setProgramSuggs] = useState([])
+  useEffect(() => { getAcademicSuggestions().then(s => { setCollegeSuggs(s.colleges); setProgramSuggs(s.programs) }) }, [])
+
   return (
     <div className="screen">{topBar(t.addTest, 'home')}
       <div className="add-test-form">
-        <div className="alert alert-info" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px' }}>
-          <span style={{ fontSize:'0.83rem' }}>Need help creating a test with AI?</span>
-          <button className="btn-primary sm" onClick={() => navigate('guide')}>{t.createGuide}</button>
+
+        {/* Step 1 — AI Guide */}
+        <div className="add-test-step">
+          <div className="add-test-step-label">Step 1 — Generate with AI</div>
+          <p style={{ fontSize:'0.84rem', color:'var(--muted)', lineHeight:1.55 }}>
+            Use any AI assistant (Claude, ChatGPT, Gemini) to convert your exam photos or notes into a Quiztagram JSON file.
+          </p>
+          <button className="btn-ghost" style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'0.85rem' }} onClick={() => navigate('guide')}>
+            <Icon name="camera" size={16} /> {t.createGuide}
+          </button>
         </div>
-        <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
-        <textarea className="textarea" placeholder={t.pasteJSON} value={json} onChange={e => setJson(e.target.value)} rows={8} />
-        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-          <span style={{ fontSize:'0.78rem', color:'var(--muted)' }}>— or —</span>
-          <label className="btn-ghost" style={{ cursor:'pointer', fontSize:'0.82rem', padding:'8px 14px', display:'inline-flex', alignItems:'center', gap:'6px' }}>
+
+        {/* Step 2 — Test Details */}
+        <div className="add-test-step">
+          <div className="add-test-step-label">Step 2 — {t.testDetails}</div>
+          <input className="field" placeholder={t.testName} value={name} onChange={e => setName(e.target.value)} />
+        </div>
+
+        {/* Step 3 — Upload Content */}
+        <div className="add-test-step">
+          <div className="add-test-step-label">Step 3 — {t.uploadContent}</div>
+          <textarea className="textarea" placeholder={t.pasteJSON} value={json} onChange={e => setJson(e.target.value)} rows={7} />
+          <div className="or-divider">or</div>
+          <label className="btn-ghost" style={{ cursor:'pointer', fontSize:'0.84rem', display:'inline-flex', alignItems:'center', gap:'8px', alignSelf:'flex-start' }}>
             <Icon name="upload" size={16} /> {t.uploadJSON}
             <input type="file" accept=".json,application/json" onChange={handleFileUpload} style={{ display:'none' }} />
           </label>
         </div>
-        <div>
-          <label className="section-label">{t.testOrigin}</label>
-          {!profileFilled && <p className="verify-note" style={{ marginBottom:'8px' }}>{t.testOriginNote}</p>}
-          <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
-            <input className="field" placeholder={t.collegePlaceholder} value={metaCollege} onChange={e => setMetaCollege(e.target.value)} />
-            <input className="field" placeholder={t.programPlaceholder} value={metaProgram} onChange={e => setMetaProgram(e.target.value)} />
-            <select className="select" value={metaSemester} onChange={e => setMetaSemester(e.target.value)}>
-              <option value="">{t.semesterLabel}…</option>
-              {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+
+        {/* Step 4 — Test Origin */}
+        <div className="add-test-step">
+          <div className="add-test-step-label">Step 4 — {t.testOrigin}</div>
+          {!profileFilled && <p style={{ fontSize:'0.8rem', color:'var(--muted)' }}>{t.testOriginNote}</p>}
+          <input className="field" list="at-college-suggs" placeholder={t.collegePlaceholder} value={metaCollege} onChange={e => setMetaCollege(e.target.value)} />
+          <datalist id="at-college-suggs">{collegeSuggs.map(c => <option key={c} value={c} />)}</datalist>
+          <input className="field" list="at-program-suggs" placeholder={t.programPlaceholder} value={metaProgram} onChange={e => setMetaProgram(e.target.value)} />
+          <datalist id="at-program-suggs">{programSuggs.map(p => <option key={p} value={p} />)}</datalist>
+          <select className="select" value={metaSemester} onChange={e => setMetaSemester(e.target.value)}>
+            <option value="">{t.semesterLabel}…</option>
+            {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
+
+        {/* AI Tags (post-validation) */}
         {tags.length > 0 && (
-          <div><label className="section-label">AI Suggested Topics</label>
-            <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
-              {tags.map(tg => <span key={tg} className="tag tag-topic">{tg}</span>)}
-            </div>
+          <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', padding:'4px 0' }}>
+            <span style={{ fontSize:'0.7rem', color:'var(--muted)', alignSelf:'center' }}>AI Topics:</span>
+            {tags.map(tg => <span key={tg} className="tag tag-topic">{tg}</span>)}
           </div>
         )}
+
+        <div className="legal-disclaimer">
+          Only upload content you created or have rights to share. Do not upload copyrighted exam questions from commercial sources (NCLEX, ATI, HESI, Kaplan, UWorld, etc.). Violations may result in content removal and account termination.
+        </div>
         {err && <p className="field-err">{err}</p>}
         <button className="btn-primary full" onClick={handleAdd} disabled={loading}>
           {loading ? <><span className="spinner" /> {t.tagsLoading}</> : t.addTestBtn}
@@ -1448,46 +1552,66 @@ function SubmissionCard({ test, t, onToggleHide, onDelete, onViewDetail }) {
 }
 
 // ─── PROFILE ─────────────────────────────────────────────────────────────────
+const AVATAR_EMOJIS = ['🎓','👩‍⚕️','👨‍⚕️','🩺','💊','🏥','🧬','🔬','🩻','📖','⭐','🎯','💙','🧪','✨']
+
 function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
   const [profilePrivate, setProfilePrivate] = useState(user.profile_private||false)
   const [displayName, setDisplayName]       = useState(user.display_name||'')
   const [mutualOnly, setMutualOnly]         = useState(user.show_to_mutual_only||false)
-  const [saved, setSaved]                   = useState(false)
+  const [savedMsg, setSavedMsg]             = useState('')
+  const [saveErr, setSaveErr]               = useState('')
   const [reviewEligible, setReviewEligible] = useState(false)
   const [flaggedTests, setFlaggedTests]     = useState([])
   const [followers, setFollowers]           = useState([])
   const [following, setFollowing]           = useState([])
   const [followTab, setFollowTab]           = useState(null)
-  // Academic demographics
-  const [college, setCollege]         = useState(user.college||'')
-  const [program, setProgram]         = useState(user.program||'')
-  const [semester, setSemester]       = useState(user.semester||'')
-  const [enrolled, setEnrolled]       = useState(user.enrolled||false)
-  const [classes, setClasses]         = useState(user.classes||[])
-  const [newClass, setNewClass]       = useState('')
-  const [professor, setProfessor]     = useState(user.professor||'')
-  const [demoPrivacy, setDemoPrivacy] = useState(user.demographics_privacy||'private')
+  // Account
+  const [username, setUsername]             = useState(user.username||'')
+  const [avatarEmoji, setAvatarEmoji]       = useState(user.avatar_emoji||'')
+  const [email, setEmail]                   = useState(user.email||'')
+  // Academic
+  const [college, setCollege]               = useState(user.college||'')
+  const [program, setProgram]               = useState(user.program||'')
+  const [semester, setSemester]             = useState(user.semester||'')
+  const [enrolled, setEnrolled]             = useState(user.enrolled||false)
+  const [classSchedule, setClassSchedule]   = useState(user.class_schedule||[])
+  const [newClassName, setNewClassName]     = useState('')
+  const [newClassProf, setNewClassProf]     = useState('')
+  const [demoPrivacy, setDemoPrivacy]       = useState(user.demographics_privacy||'private')
+  // Suggestions
+  const [collegeSuggs, setCollegeSuggs]     = useState([])
+  const [programSuggs, setProgramSuggs]     = useState([])
 
   useEffect(() => {
     (async () => {
-      const all = await getAllUsers()
+      const [all, suggs, frs, fng] = await Promise.all([
+        getAllUsers(), getAcademicSuggestions(),
+        getFollowers(user.id), getFollowing(user.id)
+      ])
+      setCollegeSuggs(suggs.colleges)
+      setProgramSuggs(suggs.programs)
       const bySession = [...all].sort((a,b)=>(b.session_count||0)-(a.session_count||0)).slice(0,5).map(u=>u.id)
       const byAcc     = [...all].sort((a,b)=>(b.overall_accuracy||0)-(a.overall_accuracy||0)).slice(0,5).map(u=>u.id)
       const isEligible = [...new Set([...bySession,...byAcc])].includes(user.id)
       setReviewEligible(isEligible)
-      if (isEligible) {
-        const tests = await getTests()
-        setFlaggedTests(tests.filter(tt => tt.flagged && !tt.reviewed))
-      }
-      const [frs, fng] = await Promise.all([getFollowers(user.id), getFollowing(user.id)])
-      setFollowers(frs)
-      setFollowing(fng)
+      if (isEligible) { const tests = await getTests(); setFlaggedTests(tests.filter(tt => tt.flagged && !tt.reviewed)) }
+      setFollowers(frs); setFollowing(fng)
     })()
   }, [])
 
+  const addClassPair = () => {
+    if (!newClassName.trim()) return
+    setClassSchedule(cs => [...cs, { name: newClassName.trim(), professor: newClassProf.trim() }])
+    setNewClassName(''); setNewClassProf('')
+  }
+
   const save = async () => {
-    const classesChanged = JSON.stringify(classes) !== JSON.stringify(user.classes || [])
-    await doUpdateUser({
+    setSaveErr(''); setSavedMsg('')
+    const schedChanged = JSON.stringify(classSchedule) !== JSON.stringify(user.class_schedule || [])
+    const result = await doUpdateUser({
+      username: username.trim() || user.username,
+      avatar_emoji: avatarEmoji || null,
+      email: email.trim() || null,
       profile_private: profilePrivate,
       display_name: displayName.trim() || null,
       show_to_mutual_only: mutualOnly,
@@ -1495,12 +1619,12 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
       program: program.trim() || null,
       semester: semester || null,
       enrolled,
-      classes,
-      professor: professor.trim() || null,
+      class_schedule: classSchedule,
       demographics_privacy: demoPrivacy,
-      ...(classesChanged ? { classes_updated_at: new Date().toISOString() } : {}),
+      ...(schedChanged ? { classes_updated_at: new Date().toISOString() } : {}),
     })
-    setSaved(true); setTimeout(() => setSaved(false), 2000)
+    if (result?.error === 'username_taken') { setSaveErr(t.usernameTaken); return }
+    setSavedMsg('✅ Saved!'); setTimeout(() => setSavedMsg(''), 2500)
   }
 
   if (followTab) return (
@@ -1533,88 +1657,144 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
         <span className="logo-sm">Quiztagram</span>
         <span className="page-title" style={{ position:'absolute', left:'50%', transform:'translateX(-50%)' }}>{user.username}</span>
       </div>
-      <div className="profile-content">
-        <div style={{ display:'flex', alignItems:'center', gap:'24px', padding:'16px 0 8px' }}>
-          <div className="profile-avatar"><div className="profile-avatar-inner">{user.username[0].toUpperCase()}</div></div>
-          <div>
-            <div className="profile-name">{user.display_name || user.username}</div>
-            {user.display_name && <div className="profile-meta">@{user.username}</div>}
-            <div className="profile-meta" style={{ marginTop:'4px' }}>{user.upload_count||0} tests uploaded</div>
-          </div>
-        </div>
-        <div className="profile-stats-row">
-          <div className="profile-stat-item" style={{ cursor:'pointer' }} onClick={() => setFollowTab('followers')}>
-            <div className="profile-stat-num">{followers.length}</div><div className="profile-stat-lbl">{t.followers}</div>
-          </div>
-          <div className="profile-stat-item" style={{ cursor:'pointer' }} onClick={() => setFollowTab('following')}>
-            <div className="profile-stat-num">{following.length}</div><div className="profile-stat-lbl">{t.following}</div>
-          </div>
-          <div className="profile-stat-item">
-            <div className="profile-stat-num">{user.session_count||0}</div><div className="profile-stat-lbl">Sessions</div>
-          </div>
-          <div className="profile-stat-item">
-            <div className="profile-stat-num">{user.overall_accuracy||0}%</div><div className="profile-stat-lbl">Accuracy</div>
-          </div>
-        </div>
-        {(user.achievements||[]).length > 0 && (
-          <div className="card">
-            <div className="section-title">Achievements</div>
-            <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
-              {user.achievements.map(id => {
-                const def = ACHIEVEMENTS_DEF.find(a => a.id === id)
-                return def ? <span key={id} className="tag tag-topic">{def.icon} {T.en.achievements[id]?.title}</span> : null
-              })}
+
+      {/* ── Profile Header ── */}
+      <div className="profile-header">
+        <div style={{ display:'flex', justifyContent:'center' }}>
+          <div className="profile-avatar">
+            <div className="profile-avatar-inner">
+              {avatarEmoji || user.avatar_emoji || user.username[0].toUpperCase()}
             </div>
           </div>
-        )}
-        <button className="btn-ghost" style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', justifyContent:'flex-start' }} onClick={() => navigate('submissions')}>
-          <Icon name="list" size={18} /> {t.submissions}
-        </button>
-
-        {/* ── Academic Profile ── */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'6px' }}>
-          <label className="section-label" style={{ margin:0 }}>{t.academicProfile}</label>
-          {isProfileComplete({ college, program, semester })
-            ? <span className="profile-complete-badge">{t.profileComplete}</span>
-            : <span className="profile-incomplete-badge">{t.profileIncomplete}</span>}
         </div>
-        {needsSemesterUpdate({ ...user, classes, enrolled, classes_updated_at: user.classes_updated_at }) && (
-          <div className="semester-reminder">
-            <span>{t.semesterReminder}</span>
-          </div>
-        )}
-        <div className="demo-section">
-          <input className="field" placeholder={t.collegePlaceholder} value={college} onChange={e => setCollege(e.target.value)} />
-          <input className="field" placeholder={t.programPlaceholder} value={program} onChange={e => setProgram(e.target.value)} />
-          <select className="select" value={semester} onChange={e => setSemester(e.target.value)}>
-            <option value="">{t.semesterLabel}…</option>
-            {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <div className="toggle-row">
-            <div><div className="toggle-label">{t.enrolledLabel}</div></div>
-            <label className="toggle-switch">
-              <input type="checkbox" checked={enrolled} onChange={e => setEnrolled(e.target.checked)} />
-              <span className="toggle-slider" />
-            </label>
-          </div>
+        <div className="profile-header-name">{user.display_name || user.username}</div>
+        {user.display_name && <div className="profile-header-username">@{user.username}</div>}
+        <div className="profile-header-meta">{user.upload_count||0} tests uploaded</div>
+      </div>
+
+      {/* ── Stats Row ── */}
+      <div className="profile-stats-row">
+        <div className="profile-stat-item" style={{ cursor:'pointer' }} onClick={() => setFollowTab('followers')}>
+          <div className="profile-stat-num">{followers.length}</div><div className="profile-stat-lbl">{t.followers}</div>
+        </div>
+        <div className="profile-stat-item" style={{ cursor:'pointer' }} onClick={() => setFollowTab('following')}>
+          <div className="profile-stat-num">{following.length}</div><div className="profile-stat-lbl">{t.following}</div>
+        </div>
+        <div className="profile-stat-item">
+          <div className="profile-stat-num">{user.session_count||0}</div><div className="profile-stat-lbl">Sessions</div>
+        </div>
+        <div className="profile-stat-item">
+          <div className="profile-stat-num">{user.overall_accuracy||0}%</div><div className="profile-stat-lbl">Accuracy</div>
+        </div>
+      </div>
+
+      <div className="profile-content">
+
+        {/* ── Quick Actions ── */}
+        <div className="profile-quick-actions">
+          <button className="profile-action-btn" onClick={() => navigate('submissions')}>
+            <Icon name="list" size={20} /><span>{t.submissions}</span>
+          </button>
+          <button className="profile-action-btn" onClick={() => navigate('achievements')}>
+            <Icon name="medal" size={20} /><span>{t.myAchievements}</span>
+          </button>
+        </div>
+
+        {/* ── Account ── */}
+        <div className="profile-section">
+          <div className="profile-section-hdr">{t.accountSettings}</div>
           <div>
-            <label className="section-label">{t.classesLabel}</label>
-            <div className="class-list">
-              {classes.map((cls, i) => (
-                <span key={i} className="class-chip">
-                  {cls}
-                  <button className="class-chip-remove" onClick={() => setClasses(c => c.filter((_, j) => j !== i))}>×</button>
-                </span>
+            <label className="section-label">{t.avatarLabel}</label>
+            <div className="avatar-picker">
+              <button className={`avatar-option clear${avatarEmoji === '' ? ' active' : ''}`} onClick={() => setAvatarEmoji('')}>
+                {user.username[0].toUpperCase()}
+              </button>
+              {AVATAR_EMOJIS.map(e => (
+                <button key={e} className={`avatar-option${avatarEmoji === e ? ' active' : ''}`} onClick={() => setAvatarEmoji(e)}>{e}</button>
               ))}
             </div>
-            <div className="class-add-row">
-              <input className="field" style={{ flex:1 }} placeholder={t.addClassPlaceholder} value={newClass}
-                onChange={e => setNewClass(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && newClass.trim()) { setClasses(c => [...c, newClass.trim()]); setNewClass('') } }} />
-              <button className="btn-primary sm" onClick={() => { if (newClass.trim()) { setClasses(c => [...c, newClass.trim()]); setNewClass('') } }}>{t.addClass}</button>
+            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'6px' }}>{t.avatarHint}</p>
+          </div>
+          <div>
+            <label className="section-label">{t.changeUsername}</label>
+            <input className="field" placeholder={user.username} value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="off" />
+          </div>
+          <div>
+            <label className="section-label">{t.displayName}</label>
+            <input className="field" placeholder={t.displayNamePlaceholder} value={displayName} onChange={e => setDisplayName(e.target.value)} />
+            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'6px' }}>{t.anonymousModeDesc}</p>
+          </div>
+        </div>
+
+        {/* ── Security ── */}
+        <div className="profile-section">
+          <div className="profile-section-hdr">{t.security}</div>
+          <div>
+            <label className="section-label">{t.recoveryEmail}</label>
+            <input className="field" type="email" placeholder={t.recoveryEmailPlaceholder} value={email} onChange={e => setEmail(e.target.value)} />
+            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'6px' }}>{t.recoveryEmailNote}</p>
+          </div>
+          <button className="btn-ghost" style={{ fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'10px' }}
+            onClick={() => navigate('changePassword')}>
+            <Icon name="back" size={16} style={{ transform:'rotate(180deg)' }} />{t.changePassword}
+          </button>
+        </div>
+
+        {/* ── Academic Profile ── */}
+        <div className="profile-section">
+          <div className="profile-section-hdr">
+            <span>{t.academicProfile}</span>
+            {isProfileComplete({ college, program, semester })
+              ? <span className="profile-complete-badge">{t.profileComplete}</span>
+              : <span className="profile-incomplete-badge">{t.profileIncomplete}</span>}
+          </div>
+          {needsSemesterUpdate({ ...user, class_schedule: classSchedule, enrolled, classes_updated_at: user.classes_updated_at }) && (
+            <div className="semester-reminder" style={{ margin:0 }}><span>{t.semesterReminder}</span></div>
+          )}
+          <div className="demo-section">
+            <input className="field" list="college-suggs" placeholder={t.collegePlaceholder} value={college} onChange={e => setCollege(e.target.value)} />
+            <datalist id="college-suggs">{collegeSuggs.map(c => <option key={c} value={c} />)}</datalist>
+
+            <input className="field" list="program-suggs" placeholder={t.programPlaceholder} value={program} onChange={e => setProgram(e.target.value)} />
+            <datalist id="program-suggs">{programSuggs.map(p => <option key={p} value={p} />)}</datalist>
+
+            <select className="select" value={semester} onChange={e => setSemester(e.target.value)}>
+              <option value="">{t.semesterLabel}…</option>
+              {getSemesterOptions().map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <div className="toggle-row">
+              <div><div className="toggle-label">{t.enrolledLabel}</div></div>
+              <label className="toggle-switch">
+                <input type="checkbox" checked={enrolled} onChange={e => setEnrolled(e.target.checked)} />
+                <span className="toggle-slider" />
+              </label>
             </div>
           </div>
-          <input className="field" placeholder={t.professorPlaceholder} value={professor} onChange={e => setProfessor(e.target.value)} />
+
+          <div>
+            <label className="section-label">{t.classesLabel}</label>
+            <div className="class-sched-list">
+              {classSchedule.map((cls, i) => (
+                <div key={i} className="class-sched-item">
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div className="class-sched-name">{cls.name}</div>
+                    {cls.professor && <div className="class-sched-prof">{cls.professor}</div>}
+                  </div>
+                  <button className="class-sched-remove" onClick={() => setClassSchedule(cs => cs.filter((_, j) => j !== i))}>×</button>
+                </div>
+              ))}
+            </div>
+            <div className="class-sched-add" style={{ marginTop: classSchedule.length ? '8px' : '0' }}>
+              <input className="field-sm" placeholder={t.classNamePlaceholder} value={newClassName}
+                onChange={e => setNewClassName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addClassPair()} />
+              <input className="field-sm" placeholder={t.classProfPlaceholder} value={newClassProf}
+                onChange={e => setNewClassProf(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addClassPair()} />
+              <button className="btn-primary sm" onClick={addClassPair}>{t.addClassPair}</button>
+            </div>
+          </div>
+
           <div>
             <label className="section-label">{t.demoPrivacyLabel}</label>
             <div className="privacy-chip-row">
@@ -1622,16 +1802,13 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
                 <button key={val} className={`privacy-chip${demoPrivacy === val ? ' active' : ''}`} onClick={() => setDemoPrivacy(val)}>{label}</button>
               ))}
             </div>
-            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'5px' }}>{t.professorPrivateNote}</p>
+            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'6px' }}>{t.professorPrivateNote}</p>
           </div>
         </div>
 
-        <label className="section-label" style={{ marginTop:'6px' }}>Privacy & Display</label>
-        <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
-          <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-            <input className="field" placeholder={t.displayNamePlaceholder} value={displayName} onChange={e => setDisplayName(e.target.value)} />
-            <p style={{ fontSize:'0.73rem', color:'var(--muted)' }}>{t.anonymousModeDesc}</p>
-          </div>
+        {/* ── Privacy & Display ── */}
+        <div className="profile-section">
+          <div className="profile-section-hdr">Privacy & Display</div>
           <div className="toggle-row">
             <div><div className="toggle-label">{t.mutualOnly}</div><div className="toggle-sub">{t.mutualOnlyDesc}</div></div>
             <label className="toggle-switch">
@@ -1640,18 +1817,21 @@ function ProfileScreen({ user, t, navigate, doUpdateUser, topBar }) {
             </label>
           </div>
           <div className="toggle-row">
-            <div><div className="toggle-label">{t.profilePrivacy}</div><div className="toggle-sub">{profilePrivate?t.private:t.public}</div></div>
+            <div><div className="toggle-label">{t.profilePrivacy}</div><div className="toggle-sub">{profilePrivate ? t.private : t.public}</div></div>
             <label className="toggle-switch">
               <input type="checkbox" checked={profilePrivate} onChange={e => setProfilePrivate(e.target.checked)} />
               <span className="toggle-slider" />
             </label>
           </div>
         </div>
-        <button className="btn-primary full" onClick={save}>{saved?'✅ Saved!':t.saveSettings}</button>
+
+        {saveErr && <p className="field-err" style={{ textAlign:'center' }}>{saveErr}</p>}
+        <button className="btn-primary full" onClick={save}>{savedMsg || t.saveSettings}</button>
+
         {reviewEligible && <>
           <div className="divider" />
           <div className="alert alert-info">⭐ You are a Top Reviewer! You can correct flagged tests.</div>
-          {flaggedTests.length===0 && <p style={{ color:'var(--muted)', fontSize:'0.85rem', textAlign:'center' }}>No flagged tests right now.</p>}
+          {flaggedTests.length === 0 && <p style={{ color:'var(--muted)', fontSize:'0.85rem', textAlign:'center' }}>No flagged tests right now.</p>}
           {flaggedTests.map(ft => (
             <button key={ft.id} className="btn-ghost" onClick={() => navigate('review', { testId: ft.id })}>
               🔍 Review: {ft.name}
@@ -1702,12 +1882,348 @@ function ReviewScreen({ user, t, lang, data, navigate, topBar }) {
   )
 }
 
+// ─── TERMS OF SERVICE ────────────────────────────────────────────────────────
+function TosScreen({ user, navigate }) {
+  const back = user ? 'home' : 'auth'
+  const S = ({ title, children }) => (
+    <div className="legal-section">
+      <div className="legal-section-title">{title}</div>
+      <div className="legal-section-body">{children}</div>
+    </div>
+  )
+  return (
+    <div className="screen">
+      <div className="top-bar">
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          <button className="back-btn" onClick={() => navigate(back)}><Icon name="back" size={22} /></button>
+          <span className="page-title">Terms of Service</span>
+        </div>
+      </div>
+      <div className="legal-header">
+        <div className="legal-header-title">Quiztagram Terms of Service</div>
+        <div className="legal-header-sub">Effective May 9, 2026 · Questions: <span className="legal-email">legal@quiztagram.com</span></div>
+      </div>
+      <div className="legal-content">
+        <S title="1. Acceptance of Terms">
+          By creating an account, accessing, or using Quiztagram in any way, you agree to be bound by these Terms of Service and our Privacy Policy. If you do not agree to all of these terms, you may not use the service. These Terms apply to all users, including visitors, registered users, and content contributors.
+        </S>
+        <S title="2. What Quiztagram Is">
+          Quiztagram is a peer-to-peer study platform designed to help nursing and healthcare students share, discover, and practice exam questions. It is a <strong>study aid only</strong> — not a substitute for official coursework, accredited training programs, textbooks, or licensed clinical guidance. Quiztagram makes no representations about the accuracy, completeness, currency, or fitness of any content for any purpose. <strong>Do not rely on Quiztagram content for clinical, diagnostic, or patient-care decisions.</strong>
+        </S>
+        <S title="3. Eligibility & Account Registration">
+          To use Quiztagram you must:
+          <ul>
+            <li>Be at least 13 years of age.</li>
+            <li>Receive a valid invite code from an existing member — registration is invite-only.</li>
+            <li>Provide a unique username and a secure password. You may optionally add a recovery email address used solely for password resets.</li>
+            <li>Keep your login credentials confidential. You are responsible for all activity that occurs under your account.</li>
+          </ul>
+          You may log in using your username or your registered recovery email address. If you lose access, password reset links are sent to your recovery email and expire after one hour.
+        </S>
+        <S title="4. User Content & Your Responsibilities">
+          You are solely responsible for all content you upload or submit. By uploading content, you represent and warrant that:
+          <ul>
+            <li>You created the content yourself, or you possess all rights necessary to share it on Quiztagram.</li>
+            <li>The content does not infringe any copyright, trademark, trade secret, or other intellectual property right of any third party.</li>
+            <li>You will <strong>not</strong> upload questions sourced from copyrighted commercial products — including but not limited to <strong>NCLEX, ATI, HESI, Kaplan, UWorld, Lippincott, or Elsevier</strong> materials — without explicit written authorization from the copyright holder.</li>
+            <li>Sharing content from your own class notes, personal study materials, or professor-distributed handouts is your personal decision. You assume full responsibility for compliance with your institution's academic integrity policy. Quiztagram does not endorse or encourage academic misconduct.</li>
+            <li>The content is not false, defamatory, obscene, harassing, threatening, or otherwise unlawful.</li>
+          </ul>
+          Quiztagram is not responsible for any academic, professional, or legal consequences arising from your use of this platform.
+        </S>
+        <S title="5. Academic Profile & Privacy Controls">
+          Quiztagram allows you to optionally share academic information — including college, program, semester, current classes, and professor. You control who sees this data through your profile privacy settings:
+          <ul>
+            <li><strong>Private:</strong> Only you can see your academic info.</li>
+            <li><strong>Mutual Followers:</strong> Only users you mutually follow can see it.</li>
+            <li><strong>Public:</strong> All Quiztagram users can see it.</li>
+          </ul>
+          Your <strong>professor field is always private</strong> regardless of your privacy setting — it is never displayed to other users. Test metadata (college, program, semester attached to an uploaded test) is always public to support search and discovery. All academic fields are optional. You can change or remove them at any time from your profile.
+        </S>
+        <S title="6. Exam Verification Feature">
+          Quiztagram allows you to verify whether a practice test matched your real classroom exam and report whether you passed. To submit a verification, your academic profile (college, program, semester) must be complete. Verifications are used to display aggregate statistics (e.g., pass rate, verified count) on test cards. Your individual result may be visible to others depending on your profile privacy settings. You may update your verification at any time.
+        </S>
+        <S title="7. Social Features">
+          Quiztagram includes social features — following other users, commenting on tests, and receiving notifications. You agree not to use these features to harass, threaten, impersonate, or spam other users. We reserve the right to remove content and ban accounts that abuse social features.
+        </S>
+        <S title="8. Copyright & DMCA Takedowns">
+          Quiztagram respects intellectual property rights and will respond to valid notices under the Digital Millennium Copyright Act (DMCA). To submit a takedown request, email <strong className="legal-email">legal@quiztagram.com</strong> with:
+          <ul>
+            <li>Identification of the copyrighted work claimed to be infringed.</li>
+            <li>The specific URL or location of the allegedly infringing content on Quiztagram.</li>
+            <li>Your name, mailing address, telephone number, and email address.</li>
+            <li>A statement that you have a good-faith belief that the use is not authorized by the copyright owner, its agent, or the law.</li>
+            <li>A statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or authorized to act on the copyright owner's behalf.</li>
+            <li>Your physical or electronic signature.</li>
+          </ul>
+          We will process valid notices promptly. Repeat infringers will have their accounts permanently terminated. Counter-notices may be submitted to the same address.
+        </S>
+        <S title="9. Prohibited Conduct">
+          You may not:
+          <ul>
+            <li>Attempt to reverse-engineer, scrape, or automate access to Quiztagram.</li>
+            <li>Use the platform for commercial purposes without written consent.</li>
+            <li>Create multiple accounts to circumvent bans or invite restrictions.</li>
+            <li>Interfere with or disrupt the security, integrity, or performance of the platform.</li>
+            <li>Impersonate any person or entity, or misrepresent your affiliation.</li>
+          </ul>
+        </S>
+        <S title="10. Disclaimer of Warranties">
+          Quiztagram is provided <strong>"as is"</strong> and <strong>"as available"</strong> without warranties of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. We do not warrant that the platform will be uninterrupted, error-free, or that any content is accurate, current, or complete. Quiztagram is not affiliated with, endorsed by, or connected to NCLEX, ATI, HESI, Kaplan, UWorld, or any educational institution.
+        </S>
+        <S title="11. Limitation of Liability">
+          To the fullest extent permitted by applicable law, Quiztagram and its operators, employees, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive damages — including but not limited to loss of data, loss of academic standing, loss of licensure opportunity, or loss of revenue — arising out of or in connection with your use of, or inability to use, this platform, even if we have been advised of the possibility of such damages.
+        </S>
+        <S title="12. Account Suspension & Termination">
+          We reserve the right to suspend or permanently terminate any account at our discretion, including for violation of these Terms, uploading infringing content, abusive behavior, or creation of multiple accounts to circumvent restrictions. We will generally attempt to provide notice, but are not required to do so where security or legal considerations apply. You may request account deletion by contacting <strong className="legal-email">legal@quiztagram.com</strong>.
+        </S>
+        <S title="13. Changes to These Terms">
+          We may update these Terms at any time. When we make material changes, we will update the effective date at the top of this page and, where feasible, notify users within the app. Your continued use of Quiztagram after changes are posted constitutes your acceptance of the revised Terms.
+        </S>
+        <S title="14. Governing Law">
+          These Terms are governed by and construed in accordance with the laws of the jurisdiction in which Quiztagram operates, without regard to conflict-of-law principles. Any dispute arising under these Terms shall be resolved in the competent courts of that jurisdiction.
+        </S>
+        <S title="15. Contact">
+          For legal matters, DMCA requests, account deletion, or any Terms-related questions:{' '}
+          <strong className="legal-email">legal@quiztagram.com</strong>
+        </S>
+      </div>
+    </div>
+  )
+}
+
+// ─── PRIVACY POLICY ───────────────────────────────────────────────────────────
+function PrivacyScreen({ user, navigate }) {
+  const back = user ? 'home' : 'auth'
+  const S = ({ title, children }) => (
+    <div className="legal-section">
+      <div className="legal-section-title">{title}</div>
+      <div className="legal-section-body">{children}</div>
+    </div>
+  )
+  return (
+    <div className="screen">
+      <div className="top-bar">
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          <button className="back-btn" onClick={() => navigate(back)}><Icon name="back" size={22} /></button>
+          <span className="page-title">Privacy Policy</span>
+        </div>
+      </div>
+      <div className="legal-header">
+        <div className="legal-header-title">Quiztagram Privacy Policy</div>
+        <div className="legal-header-sub">Effective May 9, 2026 · Questions: <span className="legal-email">legal@quiztagram.com</span></div>
+      </div>
+      <div className="legal-content">
+        <S title="1. What We Collect">
+          We collect only what is necessary to operate the platform:
+          <ul>
+            <li><strong>Account credentials:</strong> Your username and a one-way cryptographic hash of your password. We never store your actual password in plain text.</li>
+            <li><strong>Recovery email (optional):</strong> If you choose to add one, your email address is stored solely for password reset purposes. It is never shown publicly, never used for marketing, and never shared with third parties. See Section 3.</li>
+            <li><strong>Academic profile (all optional):</strong> College or university, program or course, current semester, enrollment status, and list of classes you are taking. These are controlled by your privacy settings.</li>
+            <li><strong>Professor (optional):</strong> Your professor's name, stored privately. See Section 4.</li>
+            <li><strong>Study activity:</strong> Quiz sessions, scores, accuracy rates, confidence ratings, question-level wrong-answer history, and session timestamps.</li>
+            <li><strong>Achievements:</strong> Earned achievement badges based on your platform activity.</li>
+            <li><strong>Content you create:</strong> Tests and questions you upload, comments you post, and ratings you submit.</li>
+            <li><strong>Social interactions:</strong> Users you follow and users who follow you, notifications you send and receive.</li>
+            <li><strong>Exam verifications:</strong> Whether you confirmed taking a real exam and whether you passed, tied to your academic profile. See Section 5.</li>
+            <li><strong>Invite codes:</strong> Which invite code you used to register, and any codes you have generated.</li>
+          </ul>
+        </S>
+        <S title="2. How We Use Your Data">
+          We use the data we collect to:
+          <ul>
+            <li>Operate and improve the platform — scores, leaderboards, achievements, study history, and remedial recommendations.</li>
+            <li>Personalize your experience — surfacing tests relevant to your college, program, or semester.</li>
+            <li>Enable peer discovery — showing aggregated, anonymized signals such as "students at your college also took this test" without revealing individual identities.</li>
+            <li>Send password reset emails when you request them (if you have a recovery email set).</li>
+            <li>Detect and prevent abuse, fraud, and policy violations.</li>
+          </ul>
+          We do <strong>not</strong> sell your data. We do <strong>not</strong> use your data for advertising. We do <strong>not</strong> share your data with third-party analytics, marketing, or ad platforms.
+        </S>
+        <S title="3. Recovery Email & Password Resets">
+          Your recovery email address is entirely optional. If provided:
+          <ul>
+            <li>It is stored in your account and used <strong>only</strong> to send password reset links when you request them.</li>
+            <li>Password reset tokens are single-use and expire after <strong>one hour</strong>. Unused tokens are invalidated when a new request is made.</li>
+            <li>We send reset emails via Resend (resend.com), a transactional email service. Resend acts as a data processor under our instructions and may temporarily process your email address to deliver the message.</li>
+            <li>Your email address is <strong>never shown</strong> to other users, never included in public APIs, and never used for any purpose other than password recovery.</li>
+            <li>You can update or remove your recovery email at any time from your profile settings.</li>
+          </ul>
+          You may also log in using either your username or your registered email address.
+        </S>
+        <S title="4. Professor Field — Always Private">
+          If you enter a professor's name in your academic profile, it is stored privately and <strong>never displayed to any other user</strong> under any circumstances — including when your profile is set to Public. The professor field is used only internally to improve anonymized peer matching (for example, to surface the fact that other students share your professor, without revealing who those students are or naming the professor publicly). You may leave this field blank or clear it at any time with no effect on other features.
+        </S>
+        <S title="5. Academic Profile Privacy Controls">
+          You control who can see your academic information through three visibility tiers:
+          <ul>
+            <li><strong>Private (default):</strong> Only you can see your college, program, semester, enrollment status, and class list.</li>
+            <li><strong>Mutual Followers:</strong> Only users you both follow and who follow you back can see this information.</li>
+            <li><strong>Public:</strong> Any logged-in Quiztagram user can see it. Your professor field remains private regardless.</li>
+          </ul>
+          <strong>Test metadata</strong> (the college, program, and semester you attach to a test you upload) is always publicly visible to support search and discovery. You can edit or remove test metadata from your submissions at any time. Your privacy tier only controls your profile, not your uploaded test metadata.
+        </S>
+        <S title="6. Exam Verification Data">
+          When you verify that a practice test matched a real exam you took, we store:
+          <ul>
+            <li>Your user ID, a reference to the test, and your pass/fail result.</li>
+            <li>The timestamp of your verification.</li>
+          </ul>
+          Aggregate statistics (total verifications, pass count, pass rate) are displayed publicly on test detail pages. Your individual verification result may be visible to other users depending on your profile privacy settings. You may update your verification at any time.
+        </S>
+        <S title="7. Data Sharing & Third Parties">
+          We do not sell or rent your personal data. We share data with third parties only in these limited circumstances:
+          <ul>
+            <li><strong>Resend (transactional email):</strong> Your recovery email address is passed to Resend solely to deliver password reset messages. Resend does not use it for any other purpose.</li>
+            <li><strong>Legal compliance:</strong> When required by applicable law, regulation, court order, or valid legal process.</li>
+            <li><strong>Protection of rights:</strong> To protect the rights, property, safety, or security of Quiztagram, its users, or the public.</li>
+          </ul>
+          No other data sharing occurs.
+        </S>
+        <S title="8. Data Retention & Account Deletion">
+          Your data is retained for as long as your account is active. If you wish to delete your account and all associated personal data, email <strong className="legal-email">legal@quiztagram.com</strong> with the subject line "Account Deletion Request." We will process the request within <strong>30 days</strong> and confirm when deletion is complete. Note that anonymized, aggregated statistics derived from your activity may be retained as they cannot be linked back to you.
+        </S>
+        <S title="9. Security">
+          We take reasonable measures to protect your data:
+          <ul>
+            <li>Passwords are hashed using SHA-256 with a server-side application salt. Plain-text passwords are never stored or logged.</li>
+            <li>Password reset tokens are randomly generated UUIDs, single-use, and expire after one hour.</li>
+            <li>Data is stored on servers with access controls and standard hosting security practices.</li>
+          </ul>
+          No internet transmission or electronic storage method is 100% secure. We encourage you to use a strong, unique password and to set a recovery email so you can regain access if needed.
+        </S>
+        <S title="10. Children">
+          Quiztagram is not directed at children under 13 years of age and does not knowingly collect personal information from anyone under 13. If you believe we have inadvertently collected information from a child under 13, please contact us immediately at <strong className="legal-email">legal@quiztagram.com</strong> and we will take steps to delete it promptly.
+        </S>
+        <S title="11. Your Rights">
+          Depending on your jurisdiction (including the EU/EEA under GDPR and California under CCPA), you may have the right to:
+          <ul>
+            <li><strong>Access:</strong> Request a copy of the personal data we hold about you.</li>
+            <li><strong>Correct:</strong> Update inaccurate or incomplete data (most data can be updated directly in your profile).</li>
+            <li><strong>Delete:</strong> Request deletion of your account and associated personal data.</li>
+            <li><strong>Export:</strong> Receive a machine-readable copy of your personal data.</li>
+            <li><strong>Object:</strong> Object to certain processing activities.</li>
+          </ul>
+          To exercise any of these rights, contact <strong className="legal-email">legal@quiztagram.com</strong>. We will respond within 30 days. We may need to verify your identity before processing your request.
+        </S>
+        <S title="12. Changes to This Policy">
+          We may update this Privacy Policy from time to time. When we make material changes, we will update the effective date at the top of this page and post a notice within the app. Your continued use of Quiztagram after changes are posted constitutes your acceptance of the updated policy. If you disagree with any changes, you may request account deletion.
+        </S>
+        <S title="13. Contact">
+          For privacy questions, data requests, or concerns about this policy:{' '}
+          <strong className="legal-email">legal@quiztagram.com</strong>
+        </S>
+      </div>
+    </div>
+  )
+}
+
 // ─── CHANGE PASSWORD ──────────────────────────────────────────────────────────
+// ─── FORGOT PASSWORD ──────────────────────────────────────────────────────────
+function ForgotPasswordScreen({ t, navigate }) {
+  const [username, setUsername] = useState('')
+  const [sent, setSent]         = useState(false)
+  const [loading, setLoading]   = useState(false)
+
+  const handle = async () => {
+    if (!username.trim()) return
+    setLoading(true)
+    await requestPasswordReset(username.trim())
+    setSent(true)
+    setLoading(false)
+  }
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <h1 className="logo-title">Quiztagram</h1>
+          <p className="logo-sub">{t.forgotPasswordTitle}</p>
+        </div>
+        {sent ? (
+          <div style={{ textAlign:'center', padding:'16px 0' }}>
+            <p style={{ color:'var(--muted)', marginBottom:'16px', fontSize:'0.9rem', lineHeight:'1.5' }}>{t.resetLinkSent}</p>
+            <button className="btn-ghost full" onClick={() => navigate('auth')}>{t.backToSignIn}</button>
+          </div>
+        ) : (
+          <div className="auth-fields">
+            <p style={{ fontSize:'0.85rem', color:'var(--muted)', marginBottom:'4px' }}>{t.forgotPasswordDesc}</p>
+            <input className="field" placeholder={t.usernameOrEmail} value={username} autoCapitalize="off"
+              onChange={e => setUsername(e.target.value)} onKeyDown={e => e.key === 'Enter' && handle()} />
+            <button className="btn-primary full" onClick={handle} disabled={loading}>
+              {loading ? <span className="spinner" /> : t.sendResetLink}
+            </button>
+            <button className="btn-ghost full" style={{ marginTop:'4px' }} onClick={() => navigate('auth')}>{t.backToSignIn}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── RESET PASSWORD ───────────────────────────────────────────────────────────
+function ResetPasswordScreen({ t, data, navigate }) {
+  const [newPw, setNewPw]       = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [err, setErr]           = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [done, setDone]         = useState(false)
+  const [invalid, setInvalid]   = useState(false)
+
+  const handle = async () => {
+    setErr('')
+    if (newPw.length < 6)      return setErr('Password must be at least 6 characters.')
+    if (newPw !== confirmPw)   return setErr('Passwords do not match.')
+    setLoading(true)
+    const hash = await hashPassword(newPw)
+    const res = await resetPassword(data?.token, hash)
+    if (res?.error) setInvalid(true)
+    else setDone(true)
+    setLoading(false)
+  }
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <h1 className="logo-title">Quiztagram</h1>
+          <p className="logo-sub">{t.resetPassword}</p>
+        </div>
+        {done ? (
+          <div style={{ textAlign:'center', padding:'16px 0' }}>
+            <p style={{ color:'var(--muted)', marginBottom:'16px', fontSize:'0.9rem' }}>{t.resetSuccess}</p>
+            <button className="btn-primary full" onClick={() => navigate('auth')}>{t.signIn}</button>
+          </div>
+        ) : invalid ? (
+          <div style={{ textAlign:'center', padding:'16px 0' }}>
+            <p className="field-err" style={{ textAlign:'center', marginBottom:'16px' }}>{t.resetInvalid}</p>
+            <button className="btn-ghost full" onClick={() => navigate('forgotPassword')}>{t.forgotPassword}</button>
+          </div>
+        ) : (
+          <div className="auth-fields">
+            <p style={{ fontSize:'0.85rem', color:'var(--muted)', marginBottom:'4px' }}>{t.resetPasswordDesc}</p>
+            <input className="field" type="password" placeholder={t.newPassword} value={newPw}
+              onChange={e => setNewPw(e.target.value)} autoFocus />
+            <input className="field" type="password" placeholder={t.confirmPassword} value={confirmPw}
+              onChange={e => setConfirmPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && handle()} />
+            {err && <p className="field-err">{err}</p>}
+            <button className="btn-primary full" onClick={handle} disabled={loading}>
+              {loading ? <span className="spinner" /> : t.resetPassword}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ChangePasswordScreen({ user, navigate, doUpdateUser }) {
   const [newPw, setNewPw]       = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [err, setErr]           = useState('')
   const [loading, setLoading]   = useState(false)
+
+  const forced = !!user?.force_password_change
 
   const handle = async () => {
     setErr('')
@@ -1716,16 +2232,17 @@ function ChangePasswordScreen({ user, navigate, doUpdateUser }) {
     setLoading(true)
     const hash = await hashPassword(newPw)
     await doUpdateUser({ password_hash: hash, force_password_change: false })
-    navigate('home')
+    navigate(forced ? 'home' : 'profile')
   }
 
   return (
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <span className="logo-icon">🔐</span>
-          <span className="logo-title" style={{ fontSize:'1.6rem' }}>Set your password</span>
-          <p className="logo-sub">You're using a temporary password. Choose a permanent one to continue.</p>
+          <h1 className="logo-title" style={{ fontSize:'1.8rem' }}>Quiztagram</h1>
+          <p className="logo-sub" style={{ marginTop:'8px' }}>
+            {forced ? 'You\'re using a temporary password. Choose a permanent one to continue.' : 'Choose a new password for your account.'}
+          </p>
         </div>
         <div className="auth-fields">
           <input className="field" type="password" placeholder="New password"

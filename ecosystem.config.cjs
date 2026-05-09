@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: 'nurseprep',
+    name: 'quiztagram',
     script: './server.js',
     instances: 1,
     autorestart: true,

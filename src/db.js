@@ -197,3 +197,18 @@ export async function getTestVerifications(testId) {
 export async function upsertVerification(verification) {
   return call('POST', '/api/verifications', verification)
 }
+
+// ── Password Reset ────────────────────────────────────────────────────────────
+
+export async function getAcademicSuggestions() {
+  const data = await call('GET', '/api/academic/suggestions')
+  return data || { colleges: [], programs: [] }
+}
+
+export async function requestPasswordReset(username) {
+  return call('POST', '/api/auth/forgot-password', { username })
+}
+
+export async function resetPassword(token, passwordHash) {
+  return call('POST', '/api/auth/reset-password', { token, password_hash: passwordHash })
+}

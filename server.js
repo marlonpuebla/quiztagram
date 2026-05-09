@@ -19,7 +19,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password_hash } = req.body
     const { rows } = await pool.query(
-      'SELECT * FROM users WHERE username = $1 AND password_hash = $2',
+      'SELECT * FROM users WHERE (username = $1 OR email = $1) AND password_hash = $2',
       [username, password_hash]
     )
     if (!rows[0]) return res.status(401).json({ error: 'invalid' })
@@ -75,11 +75,22 @@ app.put('/api/users/:id', async (req, res) => {
     const updates = req.body
     const entries = Object.entries(updates)
     if (!entries.length) return res.json(null)
+    // Username uniqueness check
+    if (updates.username) {
+      const { rows: existing } = await pool.query(
+        'SELECT id FROM users WHERE username = $1 AND id != $2',
+        [updates.username, req.params.id]
+      )
+      if (existing.length > 0) return res.status(400).json({ error: 'username_taken' })
+    }
     const textArrayCols = ['achievements', 'classes']
-    const setClauses = entries.map(([k], i) =>
-      textArrayCols.includes(k) ? `${k} = $${i + 1}::text[]` : `${k} = $${i + 1}`
-    ).join(', ')
-    const values = [...entries.map(([, v]) => v), req.params.id]
+    const jsonbCols     = ['class_schedule']
+    const setClauses = entries.map(([k], i) => {
+      if (textArrayCols.includes(k)) return `${k} = $${i + 1}::text[]`
+      if (jsonbCols.includes(k))     return `${k} = $${i + 1}::jsonb`
+      return `${k} = $${i + 1}`
+    }).join(', ')
+    const values = [...entries.map(([k, v]) => jsonbCols.includes(k) ? JSON.stringify(v) : v), req.params.id]
     const { rows } = await pool.query(
       `UPDATE users SET ${setClauses} WHERE id = $${values.length} RETURNING *`,
       values
@@ -88,6 +99,16 @@ app.put('/api/users/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+})
+
+app.get('/api/academic/suggestions', async (req, res) => {
+  try {
+    const [{ rows: cols }, { rows: progs }] = await Promise.all([
+      pool.query("SELECT DISTINCT college FROM users WHERE college IS NOT NULL AND college <> '' ORDER BY college LIMIT 60"),
+      pool.query("SELECT DISTINCT program FROM users WHERE program IS NOT NULL AND program <> '' ORDER BY program LIMIT 60"),
+    ])
+    res.json({ colleges: cols.map(r => r.college), programs: progs.map(r => r.program) })
+  } catch { res.json({ colleges: [], programs: [] }) }
 })
 
 // ── Invites ───────────────────────────────────────────────────────────────────
@@ -394,6 +415,91 @@ app.post('/api/notifications', async (req, res) => {
       [user_id, type, actor_id, actor_username, JSON.stringify(data || {})]
     )
     res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Password Reset ────────────────────────────────────────────────────────────
+
+const sendResetEmail = async (toEmail, resetUrl) => {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) throw new Error('RESEND_API_KEY not set')
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#000000;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:40px 24px;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <span style="font-size:2rem;font-weight:800;background:linear-gradient(45deg,#405DE6,#5851DB,#833AB4,#C13584,#E1306C,#F77737,#FCAF45);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Quiztagram</span>
+    </div>
+    <div style="background:#1C1C1C;border:1px solid #363636;border-radius:12px;padding:28px;">
+      <h2 style="color:#FAFAFA;margin:0 0 10px;font-size:1.05rem;font-weight:700;">Reset your password</h2>
+      <p style="color:#8E8E8E;font-size:0.86rem;line-height:1.7;margin:0 0 24px;">
+        We received a request to reset your Quiztagram password. Click the button below to set a new one. This link expires in <strong style="color:#FAFAFA;">1 hour</strong>.
+      </p>
+      <a href="${resetUrl}" style="display:block;text-align:center;background:#0095F6;color:#ffffff;text-decoration:none;padding:13px 20px;border-radius:8px;font-weight:700;font-size:0.9rem;">Reset Password</a>
+      <p style="color:#8E8E8E;font-size:0.75rem;line-height:1.6;margin:20px 0 0;">
+        If you didn't request this, you can safely ignore this email. Your password will not change.
+      </p>
+      <p style="color:#8E8E8E;font-size:0.72rem;margin:12px 0 0;word-break:break-all;">
+        Or copy this link: <span style="color:#0095F6;">${resetUrl}</span>
+      </p>
+    </div>
+    <p style="text-align:center;color:#8E8E8E;font-size:0.68rem;margin-top:20px;line-height:1.6;">
+      Quiztagram · Study aid only · Not affiliated with NCLEX, ATI, or Hesi<br>
+      <a href="https://quiztagram.com" style="color:#0095F6;text-decoration:none;">quiztagram.com</a>
+    </p>
+  </div>
+</body></html>`
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: 'noreply@quiztagram.com', to: toEmail, subject: 'Reset your Quiztagram password', html }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message || `Resend error ${res.status}`)
+  }
+}
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { username } = req.body
+    if (!username?.trim()) return res.json({ ok: true })
+    const { rows } = await pool.query('SELECT id, email FROM users WHERE username = $1 OR email = $1', [username.trim()])
+    // Always return ok — never reveal whether username exists or has email
+    if (!rows[0]?.email) return res.json({ ok: true })
+    const user = rows[0]
+    // Invalidate any active tokens for this user
+    await pool.query('UPDATE password_resets SET used = true WHERE user_id = $1 AND used = false', [user.id])
+    const { rows: tokenRows } = await pool.query(
+      'INSERT INTO password_resets (user_id) VALUES ($1) RETURNING token',
+      [user.id]
+    )
+    const token = tokenRows[0].token
+    const resetUrl = `https://quiztagram.com?reset=${token}`
+    await sendResetEmail(user.email, resetUrl)
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('forgot-password error:', err.message)
+    res.json({ ok: true }) // never expose internals
+  }
+})
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, password_hash } = req.body
+    if (!token || !password_hash) return res.status(400).json({ error: 'missing_fields' })
+    const { rows } = await pool.query(
+      `SELECT user_id FROM password_resets
+       WHERE token = $1 AND used = false AND expires_at > NOW()`,
+      [token]
+    )
+    if (!rows[0]) return res.status(400).json({ error: 'invalid_token' })
+    const userId = rows[0].user_id
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, userId])
+    await pool.query('UPDATE password_resets SET used = true WHERE token = $1', [token])
+    res.json({ ok: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
