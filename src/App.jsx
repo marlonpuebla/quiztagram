@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { T } from './i18n'
 import {
-  loginUser, registerUser, updateUser, generateInviteCode, getUserInviteCodes,
+  loginUser, registerUser, updateUser, hashPassword, generateInviteCode, getUserInviteCodes,
   getTests, getTestById, insertTest, updateTest, deleteTest, getUserTests,
   insertSession, getUserSessions, getSessionById, getPublicUsers, getAllUsers,
   getComments, insertComment, getWrongAnswers, incrementWrongAnswer,
@@ -57,7 +57,11 @@ export default function App() {
     return earned
   }, [showAchievement])
 
-  const login = u => { localStorage.setItem('np_user', JSON.stringify(u)); setUser(u); setScreen('home') }
+  const login = u => {
+    localStorage.setItem('np_user', JSON.stringify(u))
+    setUser(u)
+    setScreen(u.force_password_change ? 'changePassword' : 'home')
+  }
   const logout = () => { localStorage.removeItem('np_user'); setUser(null); setScreen('auth') }
 
   const doUpdateUser = async updates => {
@@ -95,8 +99,9 @@ export default function App() {
     testDetail:  <TestDetailScreen {...commonProps} data={screenData} doUpdateUser={doUpdateUser} checkAchievements={checkAchievements} />,
     submissions: <SubmissionsScreen {...commonProps} />,
     profile:     <ProfileScreen {...commonProps} doUpdateUser={doUpdateUser} />,
-    results:     <ResultsScreen {...commonProps} data={screenData} />,
-    review:      <ReviewScreen {...commonProps} data={screenData} />,
+    results:        <ResultsScreen {...commonProps} data={screenData} />,
+    review:         <ReviewScreen {...commonProps} data={screenData} />,
+    changePassword: <ChangePasswordScreen {...commonProps} doUpdateUser={doUpdateUser} />,
   }
 
   return (
@@ -1216,6 +1221,47 @@ function ReviewScreen({ user, t, lang, data, navigate, topBar }) {
         ))}
         <button className="btn-primary full" onClick={save}>{t.saveCorrections}</button>
         <button className="btn-ghost" onClick={() => navigate('profile')}>{t.cancel}</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── CHANGE PASSWORD ──────────────────────────────────────────────────────────
+function ChangePasswordScreen({ user, navigate, doUpdateUser }) {
+  const [newPw, setNewPw]       = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [err, setErr]           = useState('')
+  const [loading, setLoading]   = useState(false)
+
+  const handle = async () => {
+    setErr('')
+    if (newPw.length < 6)           return setErr('Password must be at least 6 characters.')
+    if (newPw !== confirmPw)        return setErr('Passwords do not match.')
+    setLoading(true)
+    const hash = await hashPassword(newPw)
+    await doUpdateUser({ password_hash: hash, force_password_change: false })
+    navigate('home')
+  }
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <span className="logo-icon">🔐</span>
+          <span className="logo-title" style={{ fontSize:'1.6rem' }}>Set your password</span>
+          <p className="logo-sub">You're using a temporary password. Choose a permanent one to continue.</p>
+        </div>
+        <div className="auth-fields">
+          <input className="field" type="password" placeholder="New password"
+            value={newPw} onChange={e => setNewPw(e.target.value)} autoFocus />
+          <input className="field" type="password" placeholder="Confirm password"
+            value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handle()} />
+          {err && <p className="field-err">{err}</p>}
+          <button className="btn-primary full" onClick={handle} disabled={loading}>
+            {loading ? <span className="spinner" /> : 'Set Password & Continue'}
+          </button>
+        </div>
       </div>
     </div>
   )
